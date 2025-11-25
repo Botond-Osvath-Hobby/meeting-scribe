@@ -274,6 +274,141 @@ main {
   color: var(--muted);
 }
 
+.progress-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(5, 6, 10, 0.8);
+  backdrop-filter: blur(18px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 999;
+}
+
+.progress-card {
+  width: min(520px, 90vw);
+  border-radius: 1.5rem;
+  padding: 2rem;
+  background: var(--card);
+  border: 1px solid var(--card-border);
+  box-shadow: 0 25px 65px rgba(0, 0, 0, 0.55);
+}
+
+.progress-card__header h2 {
+  margin: 0;
+}
+
+.progress-hint {
+  margin: 0.5rem 0 0;
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+
+.progress-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  margin-top: 1.5rem;
+}
+
+.progress-step {
+  padding: 1rem 1.25rem;
+  border-radius: 1.1rem;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid transparent;
+  transition: border-color 0.2s ease, transform 0.2s ease;
+}
+
+.progress-step.is-active {
+  border-color: rgba(123, 92, 255, 0.5);
+  transform: translateX(6px);
+}
+
+.progress-step.is-complete {
+  border-color: rgba(36, 229, 175, 0.4);
+}
+
+.progress-step.is-failed {
+  border-color: rgba(255, 107, 107, 0.5);
+}
+
+.progress-step__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.progress-step__title {
+  font-weight: 600;
+}
+
+.progress-step__status {
+  font-size: 0.85rem;
+  color: var(--muted);
+  text-align: right;
+}
+
+.progress-step__bar {
+  height: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  overflow: hidden;
+  margin-bottom: 0.65rem;
+  display: none;
+}
+
+.progress-step__bar.is-visible {
+  display: block;
+}
+
+.progress-step__bar span {
+  display: block;
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+  border-radius: inherit;
+  transform-origin: left;
+  transition: width 0.25s ease, opacity 0.25s ease;
+}
+
+.progress-step__spinner {
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: 50%;
+  border: 3px solid rgba(255, 255, 255, 0.12);
+  border-top-color: var(--accent);
+  margin-bottom: 0.65rem;
+  display: none;
+}
+
+.progress-step.is-active .progress-step__spinner {
+  display: inline-flex;
+  animation: spin 1s linear infinite;
+}
+
+.progress-step.is-complete .progress-step__spinner,
+.progress-step.is-failed .progress-step__spinner {
+  display: none;
+}
+
+.progress-step p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.progress-overlay[hidden] {
+  display: none;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 @media (max-width: 640px) {
   .upload-card {
     padding: 1.5rem;

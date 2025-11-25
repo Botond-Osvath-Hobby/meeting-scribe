@@ -13,12 +13,13 @@
 </section>
 
 <section class="upload-wrapper">
-    <form method="post" enctype="multipart/form-data" class="upload-card">
+    <form method="post" enctype="multipart/form-data" class="upload-card" data-progress="meeting">
+        <input type="hidden" id="operationId" name="OperationId" value="@Model.OperationId" />
         <div class="file-drop" id="file-drop">
-            <input type="file" id="meetingVideo" name="MeetingVideo" accept="video/*" required />
+            <input type="file" id="meetingVideo" name="MeetingVideo" accept="video/*,audio/*" required />
             <div class="file-copy">
                 <h2>Drag & drop your recording</h2>
-                <p>MP4, MOV, MKV, AVI or WEBM &middot; Max 2 GB</p>
+                <p>Video: MP4, MOV, MKV, AVI, WEBM · Audio: MP3, WAV, M4A, FLAC, OGG · Max 2 GB</p>
                 <button type="button" class="ghost-btn" id="select-file">Browse files</button>
                 <p class="file-name" data-default="No file selected" id="file-name">No file selected</p>
             </div>
@@ -26,39 +27,75 @@
 
         <div asp-validation-summary="ModelOnly" class="validation-summary"></div>
 
-        @if (!string.IsNullOrEmpty(Model.ErrorMessage))
-        {
-            <p class="error-banner">@Model.ErrorMessage</p>
-        }
+        <p class="error-banner" id="error-banner" @(string.IsNullOrEmpty(Model.ErrorMessage) ? "hidden" : "")>@Model.ErrorMessage</p>
 
-        <button type="submit" class="primary-btn">Generate decision summary</button>
+        <button type="submit" class="primary-btn" id="action-button" data-state="submit">Generate decision summary</button>
     </form>
 </section>
 
-@if (Model.Result is not null)
-{
-    <section class="results">
-        <div class="result-card">
-            <div class="result-card__header">
-                <p class="eyebrow">Stage 2</p>
-                <span class="badge badge--primary">Business summary</span>
-            </div>
-            <h2>Decisions & rationale</h2>
-            <p>@Model.Result.BusinessSummary</p>
+<section class="results" id="results" @(Model.Result is null ? "hidden" : "") data-has-result="@(Model.Result is not null ? "true" : "false")">
+    <div class="result-card">
+        <div class="result-card__header">
+            <p class="eyebrow">Stage 2</p>
+            <span class="badge badge--primary">Business summary</span>
         </div>
+        <h2>Decisions & rationale</h2>
+        <p data-result="summary">@Model.Result?.BusinessSummary</p>
+    </div>
 
-        <div class="result-card">
-            <div class="result-card__header">
-                <p class="eyebrow">Stage 1</p>
-                <span class="badge">Timestamped notes</span>
-            </div>
-            <h2>Raw meeting notes</h2>
-            <ul class="notes-list">
-                @foreach (var note in Model.Result.Notes)
+    <div class="result-card">
+        <div class="result-card__header">
+            <p class="eyebrow">Stage 1</p>
+            <span class="badge">Timestamped notes</span>
+        </div>
+        <h2>Raw meeting notes</h2>
+        <ul class="notes-list" data-result="notes">
+            @if (Model.Result?.Notes is not null)
+            {
+                foreach (var note in Model.Result.Notes)
                 {
                     <li>@note</li>
                 }
-            </ul>
+            }
+        </ul>
+    </div>
+</section>
+
+<section class="progress-overlay" id="progress-overlay" hidden aria-hidden="true">
+    <div class="progress-card">
+        <div class="progress-card__header">
+            <p class="eyebrow">Processing meeting</p>
+            <h2>Working on your recap</h2>
+            <p class="progress-hint">Keep this tab open while we upload, transcribe, and summarize.</p>
         </div>
-    </section>
-}
+
+        <div class="progress-steps">
+            <div class="progress-step" data-progress-step="upload">
+                <div class="progress-step__header">
+                    <span class="progress-step__title">Upload & sanitize video</span>
+                    <span class="progress-step__status">Pending</span>
+                </div>
+                <div class="progress-step__bar"><span></span></div>
+                <p>Saving an encrypted temporary copy before deletion.</p>
+            </div>
+            <div class="progress-step" data-progress-step="transcribe">
+                <div class="progress-step__header">
+                    <span class="progress-step__title">Hungarian transcription</span>
+                    <span class="progress-step__status">Pending</span>
+                </div>
+                <div class="progress-step__bar"><span></span></div>
+                <p>Running Whisper to capture timestamped notes.</p>
+            </div>
+            <div class="progress-step" data-progress-step="summarize">
+                <div class="progress-step__header">
+                    <span class="progress-step__title">Decision summary</span>
+                    <span class="progress-step__status">Pending</span>
+                </div>
+                <div class="progress-step__spinner" aria-hidden="true">
+                    <span></span>
+                </div>
+                <p>Feeding notes into the business decision writer.</p>
+            </div>
+        </div>
+    </div>
+</section>

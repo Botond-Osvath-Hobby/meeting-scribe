@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 import argparse
+import importlib
 import json
 import os
 import sys
@@ -23,7 +24,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--input", required=True, help="Path to the uploaded video file.")
     parser.add_argument(
         "--model-size",
-        default=os.getenv("WHISPER_MODEL_SIZE", "small"),
+        default=os.getenv("WHISPER_MODEL_SIZE", "large-v3"),
         help="Whisper model size (tiny, base, small, medium, large-v3, etc.).",
     )
     parser.add_argument(
@@ -33,7 +34,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--summary-model",
-        default=os.getenv("SUMMARY_MODEL", "google/flan-t5-base"),
+        default=os.getenv("SUMMARY_MODEL", "Szumis/HuBERT-XL-captions"),
         help="Transformers model used for abstractive summarization.",
     )
     parser.add_argument(
@@ -66,7 +67,52 @@ def build_notes(segments) -> list[str]:
 
 def load_transcript(video_path: Path, model_size: str, language: str):
     audio_model = whisper.load_model(model_size)
-    return audio_model.transcribe(str(video_path), language=language)
+    whisper_transcribe = importlib.import_module("whisper.transcribe")
+    tqdm_module = getattr(whisper_transcribe, "tqdm", None)
+    if tqdm_module is None or not hasattr(tqdm_module, "tqdm"):
+        return audio_model.transcribe(
+            str(video_path),
+            language=language,
+            verbose=False,
+        )
+
+    original_tqdm = tqdm_module.tqdm
+
+    def make_progress_bar(*args, **kwargs):
+        bar = original_tqdm(*args, **kwargs)
+        original_update = bar.update
+
+        def update(n=1):
+            original_update(n)
+            total = bar.total or 0
+            if total <= 0:
+                return
+            percent = max(0.0, min(1.0, bar.n / total))
+            report(
+                "transcribe",
+                "running",
+                json.dumps(
+                    {
+                        "percent": percent,
+                        "message": f"Whisper {percent * 100:.1f}% done",
+                    },
+                    ensure_ascii=False,
+                ),
+            )
+
+        bar.update = update
+        return bar
+
+    tqdm_module.tqdm = make_progress_bar
+
+    try:
+        return audio_model.transcribe(
+            str(video_path),
+            language=language,
+            verbose=False,
+        )
+    finally:
+        tqdm_module.tqdm = original_tqdm
 
 
 def summarize(transcript_text: str, model_name: str) -> str:
@@ -92,21 +138,42 @@ def summarize(transcript_text: str, model_name: str) -> str:
     return response[0]["generated_text"].strip()
 
 
+PROGRESS_PREFIX = "__PROGRESS__"
+
+
+def report(stage: str, state: str, message: str = "") -> None:
+    print(f"{PROGRESS_PREFIX}|{stage}|{state}|{message}", flush=True)
+
+
 def main() -> None:
     args = parse_args()
     video_path = Path(args.input)
     if not video_path.exists():
         raise FileNotFoundError(f"Video not found at {video_path}")
 
+    report("transcribe", "running", json.dumps({"message": "Starting Whisper"}, ensure_ascii=False))
     transcript = load_transcript(video_path, args.model_size, args.language)
     segments = transcript.get("segments") or []
     notes = build_notes(segments)
+    report(
+        "transcribe",
+        "completed",
+        json.dumps(
+            {
+                "percent": 1.0,
+                "message": f"{len(notes)} timestamped notes ready",
+            },
+            ensure_ascii=False,
+        ),
+    )
 
     transcript_text = " ".join(segment.get("text", "").strip() for segment in segments).strip()
     if len(transcript_text) > args.max_transcript_chars:
         transcript_text = f"{transcript_text[: args.max_transcript_chars]}..."
 
+    report("summarize", "running", json.dumps({"message": "Summarizing decisions"}, ensure_ascii=False))
     summary = summarize(transcript_text or transcript.get("text", ""), args.summary_model)
+    report("summarize", "completed", json.dumps({"message": "Summary ready"}, ensure_ascii=False))
 
     payload = {
         "notes": notes,
@@ -117,5 +184,9 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as exc:  # pragma: no cover
+        report("pipeline", "failed", str(exc))
+        raise
 

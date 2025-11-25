@@ -7,6 +7,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddRazorPages();
 builder.Services.Configure<VideoProcessingOptions>(
     builder.Configuration.GetSection("Processing"));
+builder.Services.AddSingleton<ProcessingProgressTracker>();
 builder.Services.AddScoped<VideoProcessingService>();
 builder.Services.Configure<FormOptions>(options =>
 {
@@ -35,5 +36,10 @@ app.UseStaticFiles();
 app.UseRouting();
 
 app.MapRazorPages();
+
+app.MapGet("/api/progress/{operationId}", (string operationId, ProcessingProgressTracker tracker) =>
+    tracker.GetSnapshot(operationId) is { } snapshot
+        ? Results.Ok(snapshot)
+        : Results.NotFound());
 
 app.Run();

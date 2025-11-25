@@ -24,14 +24,14 @@ pip install -r python/requirements.txt
 dotnet run --project MeetingScribe.Web/MeetingScribe.Web.csproj
 ```
 
-Open `https://localhost:5001` (or `http://localhost:5000`) and upload a Hungarian meeting video (MP4/MOV/MKV/AVI/WEBM, max 2 GB). The app:
+Open `https://localhost:5001` (or `http://localhost:5000`) and upload a Hungarian meeting recording (video: MP4/MOV/MKV/AVI/WEBM or audio: MP3/WAV/M4A/FLAC/OGG, max 2 GB). The app:
 
-1. Saves the file temporarily (no database needed).
-2. Calls `python/processor.py` which:
+1. Saves the file temporarily (no database needed) and streams live stage updates to the UI (upload → transcription → summary).
+2. Runs `python/processor.py`, which:
    - Transcribes Hungarian speech with Whisper.
    - Builds timestamped notes.
    - Summarizes business decisions via a Transformers model.
-3. Displays the raw notes and a decision-focused summary.
+3. Displays the raw notes and a decision-focused summary without leaving the page.
 
 ## Configuration
 
@@ -39,7 +39,10 @@ Open `https://localhost:5001` (or `http://localhost:5000`) and upload a Hungaria
 
 - `PythonExecutablePath`: override if `python` isn’t on PATH.
 - `ScriptPath`: relative or absolute path to `processor.py`.
-- `TimeoutSeconds`: upper bound for Python processing.
+- `TimeoutSeconds`: upper bound for Python processing (defaults to 7 200 s ≈ 2 h).
+- `WhisperModelSize`: passed to the script’s `--model-size` flag (default `large-v3` for stronger Hungarian recognition).
+- `SummaryModel`: passed to the script’s `--summary-model` flag (default `Szumis/HuBERT-XL-captions` tuned for HU business notes).
+- `FfmpegPath`: command used when extracting audio from uploaded videos (`ffmpeg` by default).
 
 Environment-specific overrides live in `appsettings.Development.json`.
 
@@ -47,10 +50,10 @@ Environment-specific overrides live in `appsettings.Development.json`.
 
 Environment variables consumed by `processor.py`:
 
-- `WHISPER_MODEL_SIZE` (default `small`)
-- `SUMMARY_MODEL` (default `google/flan-t5-base`)
+- `WHISPER_MODEL_SIZE` (default `large-v3`)
+- `SUMMARY_MODEL` (default `Szumis/HuBERT-XL-captions`)
 
-You can also pass `--model-size` or `--summary-model` CLI flags when invoking the script manually.
+You can also pass `--model-size` or `--summary-model` CLI flags when invoking the script manually. The web app already passes the values from `Processing:WhisperModelSize` and `Processing:SummaryModel`.
 
 ## Production deployment notes
 

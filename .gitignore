@@ -4,4 +4,5 @@ MeetingScribe.Web/obj/
 App_Data/uploads/
 *.user
 *.suo
+.vs/
 
