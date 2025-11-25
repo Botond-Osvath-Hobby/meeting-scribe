@@ -1,6 +1,9 @@
 {
   "ExpandedNodes": [
-    ""
+    "",
+    "\\Pages",
+    "\\Services"
   ],
+  "SelectedNode": "\\Services\\VideoProcessingService.cs",
   "PreviewInSolutionExplorer": false
 }

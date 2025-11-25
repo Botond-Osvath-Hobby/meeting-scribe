@@ -6,3 +6,5 @@ App_Data/uploads/
 *.suo
 .vs/
 
+MeetingScribe.Web/.vs/
+MeetingScribe.Web/.hf-cache/

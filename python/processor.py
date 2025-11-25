@@ -34,7 +34,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--summary-model",
-        default=os.getenv("SUMMARY_MODEL", "Szumis/HuBERT-XL-captions"),
+        default=os.getenv("SUMMARY_MODEL", "SZTAKI-HLT/mT5-base-HunSum-2"),
         help="Transformers model used for abstractive summarization.",
     )
     parser.add_argument(
@@ -132,8 +132,6 @@ def summarize(transcript_text: str, model_name: str) -> str:
         prompt,
         max_length=512,
         min_length=120,
-        do_sample=False,
-        temperature=0.3,
     )
     return response[0]["generated_text"].strip()
 

@@ -41,9 +41,9 @@ Open `https://localhost:5001` (or `http://localhost:5000`) and upload a Hungaria
 - `ScriptPath`: relative or absolute path to `processor.py`.
 - `TimeoutSeconds`: upper bound for Python processing (defaults to 7 200 s ≈ 2 h).
 - `WhisperModelSize`: passed to the script’s `--model-size` flag (default `large-v3` for stronger Hungarian recognition).
-- `SummaryModel`: passed to the script’s `--summary-model` flag (default `Szumis/HuBERT-XL-captions` tuned for HU business notes).
+- `SummaryModel`: passed to the script’s `--summary-model` flag (default `SZTAKI-HLT/mT5-base-HunSum-2`).
 - `FfmpegPath`: command used when extracting audio from uploaded videos (`ffmpeg` by default).
-
+ 
 Environment-specific overrides live in `appsettings.Development.json`.
 
 ## Customizing AI models
@@ -51,7 +51,7 @@ Environment-specific overrides live in `appsettings.Development.json`.
 Environment variables consumed by `processor.py`:
 
 - `WHISPER_MODEL_SIZE` (default `large-v3`)
-- `SUMMARY_MODEL` (default `Szumis/HuBERT-XL-captions`)
+- `SUMMARY_MODEL` (default `SZTAKI-HLT/mT5-base-HunSum-2`)
 
 You can also pass `--model-size` or `--summary-model` CLI flags when invoking the script manually. The web app already passes the values from `Processing:WhisperModelSize` and `Processing:SummaryModel`.
 

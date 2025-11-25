@@ -7,7 +7,7 @@ public class VideoProcessingOptions
     public int TimeoutSeconds { get; set; } = 7200;
     public string WhisperModelSize { get; set; } = "large-v3";
     public string FfmpegPath { get; set; } = "ffmpeg";
-    public string SummaryModel { get; set; } = "Szumis/HuBERT-XL-captions";
+    public string SummaryModel { get; set; } = "SZTAKI-HLT/mT5-base-HunSum-2";
 }
 
 
