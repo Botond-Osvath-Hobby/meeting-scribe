@@ -1,0 +1,64 @@
+﻿@page
+@model IndexModel
+@{
+    ViewData["Title"] = "Meeting Scribe";
+}
+
+<section class="hero">
+    <p class="eyebrow">AI meeting recap</p>
+    <h1>Upload a video. Get Hungarian business notes.</h1>
+    <p class="lede">
+        Meeting Scribe transcribes Hungarian meeting audio, captures every decision, and writes an executive-ready summary without any logins or databases.
+    </p>
+</section>
+
+<section class="upload-wrapper">
+    <form method="post" enctype="multipart/form-data" class="upload-card">
+        <div class="file-drop" id="file-drop">
+            <input type="file" id="meetingVideo" name="MeetingVideo" accept="video/*" required />
+            <div class="file-copy">
+                <h2>Drag & drop your recording</h2>
+                <p>MP4, MOV, MKV, AVI or WEBM &middot; Max 2 GB</p>
+                <button type="button" class="ghost-btn" id="select-file">Browse files</button>
+                <p class="file-name" data-default="No file selected" id="file-name">No file selected</p>
+            </div>
+        </div>
+
+        <div asp-validation-summary="ModelOnly" class="validation-summary"></div>
+
+        @if (!string.IsNullOrEmpty(Model.ErrorMessage))
+        {
+            <p class="error-banner">@Model.ErrorMessage</p>
+        }
+
+        <button type="submit" class="primary-btn">Generate decision summary</button>
+    </form>
+</section>
+
+@if (Model.Result is not null)
+{
+    <section class="results">
+        <div class="result-card">
+            <div class="result-card__header">
+                <p class="eyebrow">Stage 2</p>
+                <span class="badge badge--primary">Business summary</span>
+            </div>
+            <h2>Decisions & rationale</h2>
+            <p>@Model.Result.BusinessSummary</p>
+        </div>
+
+        <div class="result-card">
+            <div class="result-card__header">
+                <p class="eyebrow">Stage 1</p>
+                <span class="badge">Timestamped notes</span>
+            </div>
+            <h2>Raw meeting notes</h2>
+            <ul class="notes-list">
+                @foreach (var note in Model.Result.Notes)
+                {
+                    <li>@note</li>
+                }
+            </ul>
+        </div>
+    </section>
+}
