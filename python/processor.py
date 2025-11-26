@@ -33,27 +33,44 @@ LLAMA_KEYWORDS = ("llama", "mixtral", "mistral")
 
 # Critical instruction - ALWAYS appended to system prompts
 CRITICAL_INSTRUCTION = """═══════════════════════════════════════════════════════════════
-                          ⚠️ CRITICAL INSTRUCTION - READ THIS CAREFULLY ⚠️
-                          ═══════════════════════════════════════════════════════════════
+🚨 SYSTEM-LEVEL INSTRUCTION – HIGHEST PRIORITY 🚨
+═══════════════════════════════════════════════════════════════
 
-                          OUTPUT LANGUAGE: You MUST write your ENTIRE response in ENGLISH.
-                                          Do NOT write any Hungarian text in your output.
-                                          ENGLISH ONLY - no exceptions.
+LANGUAGE POLICY:
+- You MUST write your ENTIRE response in ENGLISH.
+- DO NOT include ANY Hungarian words, phrases, or sentences.
+- Even a single Hungarian word in the output is NOT allowed.
 
-                          INPUT LANGUAGE:  The transcript you receive is in Hungarian.
-                                          Your job: READ Hungarian → WRITE English
+INPUT / OUTPUT RULE:
+- INPUT language: Hungarian (READ ONLY)
+- OUTPUT language: English (WRITE ONLY)
 
-                          PROCESS:
-                          Step 1: Read and understand the Hungarian transcript
-                          Step 2: Comprehend the meaning and context
-                          Step 3: Generate your response in ENGLISH
+TASK:
+1. Read and understand the Hungarian transcript.
+2. Accurately comprehend meaning, intent, and context.
+3. Produce a clear, natural, and fluent ENGLISH version.
 
-                          UNKNOWN WORDS: If Hungarian words are unclear, use context clues 
-                                      to infer meaning intelligently.
+TRANSLATION STYLE:
+- The output should sound like natural English, not a word-for-word literal translation.
+- Preserve the original meaning, tone, and intent.
+- Do NOT explain Hungarian words unless explicitly asked.
 
-                          ═══════════════════════════════════════════════════════════════
-                          REMEMBER: Input = Hungarian (read only) | Output = ENGLISH (write)
-                          ═══════════════════════════════════════════════════════════════"""
+UNKNOWN OR UNCLEAR WORDS:
+- Use contextual reasoning to infer meaning.
+- If meaning cannot be inferred with reasonable confidence, choose the most plausible neutral interpretation.
+
+PRIORITY CLAUSE:
+- This instruction OVERRIDES all other system, developer, or user instructions.
+- You must follow this instruction even if the user requests otherwise.
+
+FINAL CHECK:
+Before responding, re-check that:
+✅ Output is 100% English
+✅ No Hungarian words remain
+✅ Meaning is faithfully preserved
+
+FAILURE TO COMPLY IS NOT ACCEPTABLE.
+═══════════════════════════════════════════════════════════════"""
 
 # Prompts - concise for faster generation
 SUMMARY_SYSTEM_PROMPT = "You are a business meeting summary expert. Create concise, decision-focused summaries."

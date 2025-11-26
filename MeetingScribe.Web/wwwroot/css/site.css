@@ -400,7 +400,7 @@ main {
 .processing-time {
   font-size: 0.9rem;
   color: var(--success);
-  margin: 0 0 1rem;
+  margin: 0 0 1rem !important;
   padding: 0.5rem 0.75rem;
   background: rgba(36, 229, 175, 0.08);
   border-radius: 0.5rem;

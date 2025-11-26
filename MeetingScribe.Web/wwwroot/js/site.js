@@ -159,6 +159,73 @@ const renderTranscript = (transcript) => {
   console.log("Transcript rendering complete");
 };
 
+// Format TimeSpan duration to human-readable string
+// ASP.NET Core serializes TimeSpan as "HH:MM:SS.fffffff" or "DD.HH:MM:SS.fffffff"
+const formatDuration = (duration) => {
+  if (!duration) return "0 seconds";
+  
+  let totalSeconds = 0;
+  
+  if (typeof duration === "string") {
+    // Parse TimeSpan format: "HH:MM:SS.fffffff" or "DD.HH:MM:SS.fffffff"
+    const parts = duration.split(":");
+    if (parts.length === 3) {
+      // Handle days if present (format: "DD.HH:MM:SS")
+      let days = 0;
+      let hoursStr = parts[0];
+      if (parts[0].includes(".")) {
+        const dayParts = parts[0].split(".");
+        days = parseInt(dayParts[0]) || 0;
+        hoursStr = dayParts[1] || "0";
+      }
+      const hours = parseInt(hoursStr) || 0;
+      const minutes = parseInt(parts[1]) || 0;
+      const seconds = parseFloat(parts[2]) || 0;
+      totalSeconds = (days * 24 * 3600) + (hours * 3600) + (minutes * 60) + seconds;
+    } else {
+      // Fallback: try to parse as number
+      totalSeconds = parseFloat(duration) || 0;
+    }
+  } else if (typeof duration === "object") {
+    // Handle object format (if TimeSpanConverter is used)
+    if (duration.totalSeconds !== undefined) {
+      totalSeconds = duration.totalSeconds;
+    } else if (duration.seconds !== undefined) {
+      totalSeconds = duration.seconds;
+    } else if (duration.days !== undefined) {
+      totalSeconds = (duration.days * 24 * 3600) + 
+                     ((duration.hours || 0) * 3600) + 
+                     ((duration.minutes || 0) * 60) + 
+                     (duration.seconds || 0);
+    }
+  }
+  
+  // Round to nearest second
+  totalSeconds = Math.round(totalSeconds);
+  
+  // Format output
+  if (totalSeconds < 60) {
+    return `${totalSeconds} second${totalSeconds !== 1 ? "s" : ""}`;
+  } else if (totalSeconds < 3600) {
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    if (seconds === 0) {
+      return `${minutes} minute${minutes !== 1 ? "s" : ""}`;
+    }
+    return `${minutes} minute${minutes !== 1 ? "s" : ""} ${seconds} second${seconds !== 1 ? "s" : ""}`;
+  } else {
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    if (minutes === 0 && seconds === 0) {
+      return `${hours} hour${hours !== 1 ? "s" : ""}`;
+    } else if (seconds === 0) {
+      return `${hours} hour${hours !== 1 ? "s" : ""} ${minutes} minute${minutes !== 1 ? "s" : ""}`;
+    }
+    return `${hours} hour${hours !== 1 ? "s" : ""} ${minutes} minute${minutes !== 1 ? "s" : ""} ${seconds} second${seconds !== 1 ? "s" : ""}`;
+  }
+};
+
 const renderSummary = (result) => {
   if (!result) {
     return;
@@ -178,6 +245,17 @@ const renderSummary = (result) => {
   // Update summary - always convert markdown to HTML for AJAX responses
   if (result.businessSummary) {
     summaryBlock.innerHTML = convertMarkdownToHtml(result.businessSummary);
+  }
+
+  // Display processing duration if available
+  const processingTime = document.getElementById("processingTime");
+  const durationText = document.getElementById("durationText");
+  if (result.processingDuration && processingTime && durationText) {
+    const duration = formatDuration(result.processingDuration);
+    durationText.textContent = duration;
+    processingTime.style.display = "block";
+  } else if (processingTime) {
+    processingTime.style.display = "none";
   }
 
   // Show the summary card
