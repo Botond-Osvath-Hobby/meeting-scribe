@@ -6,5 +6,7 @@ App_Data/uploads/
 *.suo
 .vs/
 
+python/__pycache__/
+MeetingScribe.Web/App_Data/
 MeetingScribe.Web/.vs/
 MeetingScribe.Web/.hf-cache/

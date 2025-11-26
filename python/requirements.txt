@@ -1,10 +1,11 @@
 openai-whisper==20231117
-transformers==4.35.2
+transformers==4.48.3
 torch==2.2.1
 sentencepiece==0.2.0
-accelerate==0.24.1
+accelerate==0.29.3
 tiktoken==0.7.0
 numpy<2
-huggingface-hub==0.23.2
 hf_xet>=0.5.0
-
+llama-models==0.3.0
+llama-stack==0.3.3
+blobfile==3.1.0

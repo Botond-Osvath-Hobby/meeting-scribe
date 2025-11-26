@@ -83,6 +83,14 @@ public class VideoProcessingService
         {
             arguments += $" --summary-model \"{_options.SummaryModel}\"";
         }
+        if (_options.MaxSummaryTokens > 0)
+        {
+            arguments += $" --max-summary-tokens {_options.MaxSummaryTokens}";
+        }
+        if (_options.MaxNewTokens > 0)
+        {
+            arguments += $" --max-new-tokens {_options.MaxNewTokens}";
+        }
 
             var startInfo = new ProcessStartInfo
             {
@@ -95,6 +103,7 @@ public class VideoProcessingService
                 WorkingDirectory = _environment.ContentRootPath
             };
             startInfo.Environment["PYTHONIOENCODING"] = "utf-8";
+            startInfo.Environment["LLAMA_DEVICE"] = "cuda";
 
             using var process = new Process { StartInfo = startInfo };
             var stdOut = new StringBuilder();
@@ -171,15 +180,26 @@ public class VideoProcessingService
                     "The AI pipeline returned an error. Check the application logs for the Python output.");
             }
 
-            var payload = stdOut.ToString().Trim();
-            if (string.IsNullOrWhiteSpace(payload))
+            var rawOutput = stdOut.ToString().Trim();
+            if (string.IsNullOrWhiteSpace(rawOutput))
             {
                 throw new VideoProcessingException("No output was produced by the AI pipeline.");
             }
 
+            // Extract JSON payload (should be the last line starting with '{')
+            var lines = rawOutput.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            var jsonLine = lines.LastOrDefault(l => l.StartsWith("{"));
+            
+            if (string.IsNullOrWhiteSpace(jsonLine))
+            {
+                _logger.LogError("No JSON found in Python output. Full output: {Output}", rawOutput);
+                throw new VideoProcessingException("The AI pipeline did not produce valid JSON output.");
+            }
+
+            VideoProcessingResult finalResult;
             try
             {
-                var result = JsonSerializer.Deserialize<PythonResponse>(payload, _jsonOptions)
+                var result = JsonSerializer.Deserialize<PythonResponse>(jsonLine, _jsonOptions)
                     ?? throw new VideoProcessingException("Unexpected AI response format.");
 
                 if (string.IsNullOrWhiteSpace(result.BusinessSummary))
@@ -190,9 +210,7 @@ public class VideoProcessingService
                 var notes = result.Notes?.Where(n => !string.IsNullOrWhiteSpace(n)).ToList()
                             ?? new List<string>();
 
-                var finalResult = new VideoProcessingResult(notes, result.BusinessSummary.Trim());
-                _progressTracker.UpdateStage(operationId ?? string.Empty, ProgressStageKeys.Summarize, ProgressStates.Completed, "Summary ready.");
-                return finalResult;
+                finalResult = new VideoProcessingResult(notes, result.BusinessSummary.Trim());
             }
             catch (VideoProcessingException)
             {
@@ -200,10 +218,13 @@ public class VideoProcessingService
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to parse Python output: {Payload}", payload);
+                _logger.LogError(ex, "Failed to parse JSON: {JsonLine}. Full output length: {Length} chars", jsonLine, rawOutput.Length);
                 _progressTracker.UpdateStage(operationId ?? string.Empty, ProgressStageKeys.Summarize, ProgressStates.Failed, "Could not parse AI response.");
                 throw new VideoProcessingException("Could not parse the AI response. Ensure the script prints JSON.", ex);
             }
+
+            _progressTracker.UpdateStage(operationId ?? string.Empty, ProgressStageKeys.Summarize, ProgressStates.Completed, "Summary ready.");
+            return finalResult;
         }
         finally
         {
