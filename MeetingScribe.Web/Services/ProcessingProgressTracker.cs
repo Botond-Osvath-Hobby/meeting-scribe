@@ -8,6 +8,7 @@ public static class ProgressStageKeys
     public const string Upload = "upload";
     public const string Transcribe = "transcribe";
     public const string Summarize = "summarize";
+    public const string SummarizeGenerate = "summarize_generate";
     public const string Pipeline = "pipeline";
 }
 
@@ -92,6 +93,7 @@ public class ProcessingProgress
     public ProgressStage Upload { get; } = new(ProgressStageKeys.Upload);
     public ProgressStage Transcribe { get; } = new(ProgressStageKeys.Transcribe);
     public ProgressStage Summarize { get; } = new(ProgressStageKeys.Summarize);
+    public ProgressStage SummarizeGenerate { get; } = new(ProgressStageKeys.SummarizeGenerate);
     public string OverallState { get; private set; } = ProgressStates.Pending;
     public string? Message { get; private set; }
     public DateTimeOffset CreatedAt { get; } = DateTimeOffset.UtcNow;
@@ -122,6 +124,7 @@ public class ProcessingProgress
             ProgressStageKeys.Upload => Upload,
             ProgressStageKeys.Transcribe => Transcribe,
             ProgressStageKeys.Summarize => Summarize,
+            ProgressStageKeys.SummarizeGenerate => SummarizeGenerate,
             _ => null
         };
     }
@@ -136,7 +139,8 @@ public class ProcessingProgress
             CompletedAt = CompletedAt,
             Upload = Upload.ToSnapshot(),
             Transcribe = Transcribe.ToSnapshot(),
-            Summarize = Summarize.ToSnapshot()
+            Summarize = Summarize.ToSnapshot(),
+            SummarizeGenerate = SummarizeGenerate.ToSnapshot()
         };
 }
 
@@ -199,6 +203,7 @@ public class ProcessingProgressSnapshot
     public ProgressStageSnapshot Upload { get; init; } = new();
     public ProgressStageSnapshot Transcribe { get; init; } = new();
     public ProgressStageSnapshot Summarize { get; init; } = new();
+    public ProgressStageSnapshot SummarizeGenerate { get; init; } = new();
 }
 
 public class ProgressStageSnapshot

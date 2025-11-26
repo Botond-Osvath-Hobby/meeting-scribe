@@ -625,6 +625,7 @@ main {
   display: none;
   margin-left: auto;
   margin-right: auto;
+  margin-top: 1rem;
 }
 
 .progress-step.is-active .progress-step__spinner {
@@ -635,6 +636,42 @@ main {
 .progress-step.is-complete .progress-step__spinner,
 .progress-step.is-failed .progress-step__spinner {
   display: none;
+}
+
+.progress-step__tokens {
+  margin: 1rem auto 0.5rem;
+  text-align: center;
+  font-size: 0.875rem;
+  opacity: 0.9;
+}
+
+.token-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  background: rgba(123, 92, 255, 0.15);
+  border: 1px solid rgba(123, 92, 255, 0.3);
+  border-radius: 2rem;
+  color: var(--accent-strong);
+  font-weight: 600;
+  font-family: 'Consolas', 'Monaco', monospace;
+  margin-top: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.token-badge #tokenCount {
+  font-size: 1.1rem;
+  color: var(--accent-strong);
+  text-shadow: 0 0 10px rgba(200, 91, 255, 0.3);
+}
+
+.token-details {
+  display: block;
+  margin-top: 0.5rem;
+  color: var(--muted);
+  font-size: 0.8rem;
+  margin-bottom: 1rem;
 }
 
 .progress-step p {

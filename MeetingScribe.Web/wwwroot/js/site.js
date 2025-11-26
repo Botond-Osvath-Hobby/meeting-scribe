@@ -702,6 +702,16 @@ const initAgentSelector = () => {
           if (spinner) {
             spinner.dataset.state = "running";
           }
+          
+          // Reset and hide token counter
+          const tokenCounter = document.getElementById("tokenCounter");
+          const tokenCount = document.getElementById("tokenCount");
+          const tokenDetails = document.getElementById("tokenDetails");
+          if (tokenCounter && tokenCount && tokenDetails) {
+            tokenCounter.style.display = "none";
+            tokenCount.textContent = "0";
+            tokenDetails.textContent = "";
+          }
         }
       }
     };
@@ -729,13 +739,64 @@ const initAgentSelector = () => {
                 status.textContent = snapshot.summarize.message || "In progress";
               }
               
+              // Update token counter if we have token data (from summarizeGenerate stage)
+              const tokenCounter = document.getElementById("tokenCounter");
+              const tokenCount = document.getElementById("tokenCount");
+              const tokenDetails = document.getElementById("tokenDetails");
+              
+              // Check summarizeGenerate stage for detailed token data (camelCase from JSON)
+              if (snapshot.summarizeGenerate && tokenCounter && tokenCount && tokenDetails) {
+                const genData = snapshot.summarizeGenerate;
+                const message = genData.message || "";
+                
+                console.log("SummarizeGenerate data:", genData);
+                console.log("Token message:", message);
+                
+                // Parse message format: "Generating chunk 1/2: 100/1024 tokens (10%)"
+                const tokenMatch = message.match(/:\s*(\d+)\/(\d+)\s+tokens/);
+                const chunkMatch = message.match(/chunk\s+(\d+)\/(\d+)/i);
+                
+                if (tokenMatch) {
+                  const currentTokens = parseInt(tokenMatch[1]);
+                  const maxTokens = parseInt(tokenMatch[2]);
+                  
+                  console.log(`Showing token counter: ${currentTokens}/${maxTokens}`);
+                  tokenCounter.style.display = "block";
+                  tokenCount.textContent = currentTokens.toLocaleString();
+                  
+                  if (chunkMatch) {
+                    const currentChunk = parseInt(chunkMatch[1]);
+                    const totalChunks = parseInt(chunkMatch[2]);
+                    tokenDetails.textContent = `Chunk ${currentChunk}/${totalChunks} • Max ${maxTokens.toLocaleString()}`;
+                  } else {
+                    tokenDetails.textContent = `Max ${maxTokens.toLocaleString()}`;
+                  }
+                } else {
+                  console.log("No token match in message:", message);
+                }
+              } else {
+                if (!snapshot.summarizeGenerate) {
+                  console.log("No summarizeGenerate in snapshot");
+                }
+              }
+              
               // Update state classes
               if (snapshot.summarize.state === "completed") {
                 summarizeStep.classList.remove("is-active");
                 summarizeStep.classList.add("is-complete");
+                
+                // Hide token counter when complete
+                if (tokenCounter) {
+                  tokenCounter.style.display = "none";
+                }
               } else if (snapshot.summarize.state === "failed") {
                 summarizeStep.classList.remove("is-active");
                 summarizeStep.classList.add("is-failed");
+                
+                // Hide token counter on failure
+                if (tokenCounter) {
+                  tokenCounter.style.display = "none";
+                }
               }
             }
 
@@ -845,6 +906,16 @@ const initAgentSelector = () => {
         const summarizeStep = overlay.querySelector('[data-progress-step="summarize"]');
         if (summarizeStep) {
           summarizeStep.classList.remove("is-visible", "is-active", "is-complete", "is-failed");
+        }
+        
+        // Reset token counter
+        const tokenCounter = document.getElementById("tokenCounter");
+        const tokenCount = document.getElementById("tokenCount");
+        const tokenDetails = document.getElementById("tokenDetails");
+        if (tokenCounter && tokenCount && tokenDetails) {
+          tokenCounter.style.display = "none";
+          tokenCount.textContent = "0";
+          tokenDetails.textContent = "";
         }
       }
     }
