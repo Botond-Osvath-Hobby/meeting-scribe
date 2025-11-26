@@ -35,6 +35,156 @@ public class VideoProcessingService
         _progressTracker = progressTracker;
     }
 
+    public async Task<TranscriptData> TranscribeOnlyAsync(
+        string videoPath,
+        string? operationId,
+        CancellationToken cancellationToken = default)
+    {
+        if (!File.Exists(videoPath))
+        {
+            throw new VideoProcessingException("The uploaded video could not be found on the server.");
+        }
+
+        var scriptPath = ResolvePath(_options.ScriptPath);
+        if (!File.Exists(scriptPath))
+        {
+            throw new VideoProcessingException($"The Python script was not found at '{scriptPath}'.");
+        }
+
+        var pythonPath = string.IsNullOrWhiteSpace(_options.PythonExecutablePath)
+            ? "python"
+            : _options.PythonExecutablePath;
+
+        var mediaPath = videoPath;
+        var tempFiles = new List<string>();
+
+        try
+        {
+            mediaPath = await PrepareMediaAsync(videoPath, tempFiles, cancellationToken);
+
+            var arguments = $"\"{scriptPath}\" --input \"{mediaPath}\" --transcript-only";
+            if (!string.IsNullOrWhiteSpace(_options.WhisperModelSize))
+            {
+                arguments += $" --model-size \"{_options.WhisperModelSize}\"";
+            }
+
+            var result = await RunPythonScriptAsync(pythonPath, arguments, operationId, cancellationToken);
+            
+            var transcriptData = JsonSerializer.Deserialize<TranscriptDataResponse>(result, _jsonOptions)
+                ?? throw new VideoProcessingException("Unexpected transcript response format.");
+
+            var notes = transcriptData.Notes?.Where(n => !string.IsNullOrWhiteSpace(n)).ToList()
+                        ?? new List<string>();
+
+            // Save transcript to file
+            var transcriptPath = Path.Combine(
+                Path.GetDirectoryName(videoPath) ?? Path.GetTempPath(),
+                $"{Path.GetFileNameWithoutExtension(videoPath)}.transcript.json"
+            );
+
+            await File.WriteAllTextAsync(
+                transcriptPath,
+                JsonSerializer.Serialize(new { notes, transcriptText = transcriptData.TranscriptText }, _jsonOptions),
+                cancellationToken
+            );
+
+            _logger.LogInformation("Transcript saved to {Path}", transcriptPath);
+
+            return new TranscriptData(notes, transcriptData.TranscriptText ?? "", transcriptPath);
+        }
+        finally
+        {
+            foreach (var tempFile in tempFiles)
+            {
+                TryDelete(tempFile);
+            }
+
+            if (!string.Equals(mediaPath, videoPath, StringComparison.OrdinalIgnoreCase))
+            {
+                TryDelete(mediaPath);
+            }
+        }
+    }
+
+    public async Task<VideoProcessingResult> SummarizeFromTranscriptAsync(
+        string transcriptPath,
+        string systemPrompt,
+        string userPromptTemplate,
+        string? operationId,
+        CancellationToken cancellationToken = default)
+    {
+        var startTime = DateTime.UtcNow;
+
+        if (!File.Exists(transcriptPath))
+        {
+            throw new VideoProcessingException("The transcript file could not be found.");
+        }
+
+        var scriptPath = ResolvePath(_options.ScriptPath);
+        if (!File.Exists(scriptPath))
+        {
+            throw new VideoProcessingException($"The Python script was not found at '{scriptPath}'.");
+        }
+
+        var pythonPath = string.IsNullOrWhiteSpace(_options.PythonExecutablePath)
+            ? "python"
+            : _options.PythonExecutablePath;
+
+        // Create a dummy input path (required by argparse but not used when --transcript-input is provided)
+        var dummyInput = Path.Combine(Path.GetDirectoryName(transcriptPath) ?? Path.GetTempPath(), "dummy.mp4");
+
+        var arguments = $"\"{scriptPath}\" --input \"{dummyInput}\" --transcript-input \"{transcriptPath}\"";
+        if (!string.IsNullOrWhiteSpace(_options.SummaryModel))
+        {
+            arguments += $" --summary-model \"{_options.SummaryModel}\"";
+        }
+        if (_options.MaxSummaryTokens > 0)
+        {
+            arguments += $" --max-summary-tokens {_options.MaxSummaryTokens}";
+        }
+        if (_options.MaxNewTokens > 0)
+        {
+            arguments += $" --max-new-tokens {_options.MaxNewTokens}";
+        }
+        
+        // Add custom prompts (escape quotes in prompts)
+        arguments += $" --system-prompt \"{systemPrompt.Replace("\"", "\\\"")}\"";
+        arguments += $" --user-prompt-template \"{userPromptTemplate.Replace("\"", "\\\"")}\"";
+
+        var resultJson = await RunPythonScriptAsync(pythonPath, arguments, operationId, cancellationToken);
+
+        VideoProcessingResult finalResult;
+        try
+        {
+            var result = JsonSerializer.Deserialize<PythonResponse>(resultJson, _jsonOptions)
+                ?? throw new VideoProcessingException("Unexpected AI response format.");
+
+            if (string.IsNullOrWhiteSpace(result.BusinessSummary))
+            {
+                throw new VideoProcessingException("The AI response did not include a business summary.");
+            }
+
+            var notes = result.Notes?.Where(n => !string.IsNullOrWhiteSpace(n)).ToList()
+                        ?? new List<string>();
+
+            var duration = DateTime.UtcNow - startTime;
+            finalResult = new VideoProcessingResult(notes, result.BusinessSummary.Trim(), duration);
+        }
+        catch (VideoProcessingException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to parse JSON: {JsonLine}", resultJson);
+            _progressTracker.UpdateStage(operationId ?? string.Empty, ProgressStageKeys.Summarize, ProgressStates.Failed, "Could not parse AI response.");
+            throw new VideoProcessingException("Could not parse the AI response. Ensure the script prints JSON.", ex);
+        }
+
+        _progressTracker.UpdateStage(operationId ?? string.Empty, ProgressStageKeys.Summarize, ProgressStates.Completed, "Summary ready.");
+        return finalResult;
+    }
+
     public async Task<VideoProcessingResult> ProcessAsync(
         string videoPath,
         string? operationId,
@@ -77,126 +227,24 @@ public class VideoProcessingService
             }
 
             var arguments = $"\"{scriptPath}\" --input \"{mediaPath}\"";
-        if (!string.IsNullOrWhiteSpace(_options.WhisperModelSize))
-        {
-            arguments += $" --model-size \"{_options.WhisperModelSize}\"";
-        }
-        if (!string.IsNullOrWhiteSpace(_options.SummaryModel))
-        {
-            arguments += $" --summary-model \"{_options.SummaryModel}\"";
-        }
-        if (_options.MaxSummaryTokens > 0)
-        {
-            arguments += $" --max-summary-tokens {_options.MaxSummaryTokens}";
-        }
-        if (_options.MaxNewTokens > 0)
-        {
-            arguments += $" --max-new-tokens {_options.MaxNewTokens}";
-        }
-
-            var startInfo = new ProcessStartInfo
+            if (!string.IsNullOrWhiteSpace(_options.WhisperModelSize))
             {
-                FileName = pythonPath,
-                Arguments = arguments,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                WorkingDirectory = _environment.ContentRootPath
-            };
-            startInfo.Environment["PYTHONIOENCODING"] = "utf-8";
-            startInfo.Environment["LLAMA_DEVICE"] = "cuda";
-
-            using var process = new Process { StartInfo = startInfo };
-            var stdOut = new StringBuilder();
-            var stdErr = new StringBuilder();
-
-        process.OutputDataReceived += (_, args) =>
-        {
-            if (args.Data is null)
+                arguments += $" --model-size \"{_options.WhisperModelSize}\"";
+            }
+            if (!string.IsNullOrWhiteSpace(_options.SummaryModel))
             {
-                return;
+                arguments += $" --summary-model \"{_options.SummaryModel}\"";
+            }
+            if (_options.MaxSummaryTokens > 0)
+            {
+                arguments += $" --max-summary-tokens {_options.MaxSummaryTokens}";
+            }
+            if (_options.MaxNewTokens > 0)
+            {
+                arguments += $" --max-new-tokens {_options.MaxNewTokens}";
             }
 
-            if (TryHandleProgressSignal(operationId, args.Data))
-            {
-                return;
-            }
-
-            lock (stdOut)
-            {
-                stdOut.AppendLine(args.Data);
-            }
-
-            _logger.LogInformation("PY> {Line}", args.Data);
-        };
-
-        process.ErrorDataReceived += (_, args) =>
-        {
-            if (args.Data is not null)
-            {
-                stdErr.AppendLine(args.Data);
-                _logger.LogInformation("PROCESSOR> {Line}", args.Data);
-            }
-        };
-
-            try
-            {
-                process.Start();
-                process.BeginOutputReadLine();
-                process.BeginErrorReadLine();
-
-                var timeout = _options.TimeoutSeconds > 0
-                    ? TimeSpan.FromSeconds(_options.TimeoutSeconds)
-                    : Timeout.InfiniteTimeSpan;
-
-                using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-                if (timeout != Timeout.InfiniteTimeSpan)
-                {
-                    timeoutCts.CancelAfter(timeout);
-                }
-
-                try
-                {
-                    await process.WaitForExitAsync(timeoutCts.Token);
-                }
-                catch (OperationCanceledException)
-                {
-                    TerminateProcess(process);
-                    _progressTracker.UpdateStage(operationId ?? string.Empty, ProgressStageKeys.Transcribe, ProgressStates.Failed, "Processing timed out.");
-                    throw new VideoProcessingException("Processing timed out. Try a shorter video or increase the timeout.");
-                }
-            }
-            catch (Exception ex) when (ex is not VideoProcessingException)
-            {
-                TerminateProcess(process);
-                _progressTracker.UpdateStage(operationId ?? string.Empty, ProgressStageKeys.Transcribe, ProgressStates.Failed, "Failed to start AI pipeline.");
-                throw new VideoProcessingException("The AI pipeline failed to start. Verify the Python runtime and dependencies.", ex);
-            }
-
-            if (process.ExitCode != 0)
-            {
-                _logger.LogError("Python script failed with code {Code}: {Error}", process.ExitCode, stdErr.ToString());
-                _progressTracker.UpdateStage(operationId ?? string.Empty, ProgressStageKeys.Transcribe, ProgressStates.Failed, "Python pipeline failed.");
-                throw new VideoProcessingException(
-                    "The AI pipeline returned an error. Check the application logs for the Python output.");
-            }
-
-            var rawOutput = stdOut.ToString().Trim();
-            if (string.IsNullOrWhiteSpace(rawOutput))
-            {
-                throw new VideoProcessingException("No output was produced by the AI pipeline.");
-            }
-
-            // Extract JSON payload (should be the last line starting with '{')
-            var lines = rawOutput.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-            var jsonLine = lines.LastOrDefault(l => l.StartsWith("{"));
-            
-            if (string.IsNullOrWhiteSpace(jsonLine))
-            {
-                _logger.LogError("No JSON found in Python output. Full output: {Output}", rawOutput);
-                throw new VideoProcessingException("The AI pipeline did not produce valid JSON output.");
-            }
+            var jsonLine = await RunPythonScriptAsync(pythonPath, arguments, operationId, cancellationToken);
 
             VideoProcessingResult finalResult;
             try
@@ -221,7 +269,7 @@ public class VideoProcessingService
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to parse JSON: {JsonLine}. Full output length: {Length} chars", jsonLine, rawOutput.Length);
+                _logger.LogError(ex, "Failed to parse JSON: {JsonLine}", jsonLine);
                 _progressTracker.UpdateStage(operationId ?? string.Empty, ProgressStageKeys.Summarize, ProgressStates.Failed, "Could not parse AI response.");
                 throw new VideoProcessingException("Could not parse the AI response. Ensure the script prints JSON.", ex);
             }
@@ -324,6 +372,131 @@ public class VideoProcessingService
         {
             throw new VideoProcessingException($"ffmpeg exited with code {process.ExitCode}. {stderr}");
         }
+    }
+
+    private async Task<string> RunPythonScriptAsync(
+        string pythonPath,
+        string arguments,
+        string? operationId,
+        CancellationToken cancellationToken)
+    {
+        var startInfo = new ProcessStartInfo
+        {
+            FileName = pythonPath,
+            Arguments = arguments,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            WorkingDirectory = _environment.ContentRootPath
+        };
+        
+        // Ensure PATH and other environment variables are inherited
+        foreach (System.Collections.DictionaryEntry envVar in Environment.GetEnvironmentVariables())
+        {
+            var key = envVar.Key?.ToString();
+            var value = envVar.Value?.ToString();
+            if (!string.IsNullOrEmpty(key) && value != null)
+            {
+                startInfo.Environment[key] = value;
+            }
+        }
+        
+        startInfo.Environment["PYTHONIOENCODING"] = "utf-8";
+        startInfo.Environment["LLAMA_DEVICE"] = "cuda";
+
+        using var process = new Process { StartInfo = startInfo };
+        var stdOut = new StringBuilder();
+        var stdErr = new StringBuilder();
+
+        process.OutputDataReceived += (_, args) =>
+        {
+            if (args.Data is null)
+            {
+                return;
+            }
+
+            if (TryHandleProgressSignal(operationId, args.Data))
+            {
+                return;
+            }
+
+            lock (stdOut)
+            {
+                stdOut.AppendLine(args.Data);
+            }
+
+            _logger.LogInformation("PY> {Line}", args.Data);
+        };
+
+        process.ErrorDataReceived += (_, args) =>
+        {
+            if (args.Data is not null)
+            {
+                stdErr.AppendLine(args.Data);
+                _logger.LogInformation("PROCESSOR> {Line}", args.Data);
+            }
+        };
+
+        try
+        {
+            process.Start();
+            process.BeginOutputReadLine();
+            process.BeginErrorReadLine();
+
+            var timeout = _options.TimeoutSeconds > 0
+                ? TimeSpan.FromSeconds(_options.TimeoutSeconds)
+                : Timeout.InfiniteTimeSpan;
+
+            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            if (timeout != Timeout.InfiniteTimeSpan)
+            {
+                timeoutCts.CancelAfter(timeout);
+            }
+
+            try
+            {
+                await process.WaitForExitAsync(timeoutCts.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                TerminateProcess(process);
+                _progressTracker.UpdateStage(operationId ?? string.Empty, ProgressStageKeys.Transcribe, ProgressStates.Failed, "Processing timed out.");
+                throw new VideoProcessingException("Processing timed out. Try a shorter video or increase the timeout.");
+            }
+        }
+        catch (Exception ex) when (ex is not VideoProcessingException)
+        {
+            TerminateProcess(process);
+            _progressTracker.UpdateStage(operationId ?? string.Empty, ProgressStageKeys.Transcribe, ProgressStates.Failed, "Failed to start AI pipeline.");
+            throw new VideoProcessingException("The AI pipeline failed to start. Verify the Python runtime and dependencies.", ex);
+        }
+
+        if (process.ExitCode != 0)
+        {
+            _logger.LogError("Python script failed with code {Code}: {Error}", process.ExitCode, stdErr.ToString());
+            _progressTracker.UpdateStage(operationId ?? string.Empty, ProgressStageKeys.Transcribe, ProgressStates.Failed, "Python pipeline failed.");
+            throw new VideoProcessingException(
+                "The AI pipeline returned an error. Check the application logs for the Python output.");
+        }
+
+        var rawOutput = stdOut.ToString().Trim();
+        if (string.IsNullOrWhiteSpace(rawOutput))
+        {
+            throw new VideoProcessingException("No output was produced by the AI pipeline.");
+        }
+
+        // Extract JSON payload (should be the last line starting with '{')
+        var lines = rawOutput.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var jsonLine = lines.LastOrDefault(l => l.StartsWith("{"));
+
+        if (string.IsNullOrWhiteSpace(jsonLine))
+        {
+            _logger.LogError("No JSON found in Python output. Full output: {Output}", rawOutput);
+            throw new VideoProcessingException("The AI pipeline did not produce valid JSON output.");
+        }
+
+        return jsonLine;
     }
 
     private static void TerminateProcess(Process process)
@@ -438,6 +611,7 @@ public class VideoProcessingService
     }
 
     private sealed record PythonResponse(IReadOnlyList<string>? Notes, string? BusinessSummary);
+    private sealed record TranscriptDataResponse(IReadOnlyList<string>? Notes, string? TranscriptText);
 }
 
 

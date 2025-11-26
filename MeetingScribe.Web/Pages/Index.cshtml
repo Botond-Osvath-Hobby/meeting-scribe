@@ -33,51 +33,99 @@
     </form>
 </section>
 
-<section class="results" id="results" @(Model.Result is null ? "hidden" : "") data-has-result="@(Model.Result is not null ? "true" : "false")">
-    <div class="result-card">
+<section class="results" id="results" hidden data-has-result="false">
+    <!-- Transcript and Notes Card -->
+    <div class="result-card" id="transcriptCard" style="display: none;">
         <div class="result-card__header">
-            <p class="eyebrow">Stage 2</p>
-            <span class="badge badge--primary">Business summary</span>
-        </div>
-        <h2>Decisions & rationale</h2>
-        @if (Model.Result is not null)
-        {
-            <p class="processing-time">
-                ⏱️ Processing completed in 
-                @if (Model.Result.ProcessingDuration.TotalHours >= 1)
-                {
-                    @($"{Model.Result.ProcessingDuration.Hours}h {Model.Result.ProcessingDuration.Minutes}m {Model.Result.ProcessingDuration.Seconds}s")
-                }
-                else if (Model.Result.ProcessingDuration.TotalMinutes >= 1)
-                {
-                    @($"{Model.Result.ProcessingDuration.Minutes}m {Model.Result.ProcessingDuration.Seconds}s")
-                }
-                else
-                {
-                    @($"{Model.Result.ProcessingDuration.Seconds}s")
-                }
-            </p>
-        }
-        <div class="summary-content" data-result="summary">
-            @Html.Raw(Model.FormattedSummary)
-        </div>
-    </div>
-
-    <div class="result-card">
-        <div class="result-card__header">
-            <p class="eyebrow">Stage 1</p>
+            <p class="eyebrow">Stage 2 Complete</p>
             <span class="badge">Timestamped notes</span>
         </div>
-        <h2>Raw meeting notes</h2>
+        <h2>Transcription ready</h2>
         <ul class="notes-list" data-result="notes">
-            @if (Model.Result?.Notes is not null)
+            @if (Model.Transcript is not null)
             {
-                foreach (var note in Model.Result.Notes)
+                @foreach (var note in Model.Transcript.Notes)
                 {
                     <li>@note</li>
                 }
             }
         </ul>
+    </div>
+    
+    <!-- Agent Selector Card -->
+    <div class="result-card" id="agentCard" style="display: none;">
+        <div class="result-card__header">
+            <p class="eyebrow">Stage 3</p>
+            <span class="badge badge--primary">Choose Agent</span>
+        </div>
+        <h2>Select summary type</h2>
+        
+        <div class="agent-selector" id="agentSelector">
+            <div class="form-group">
+                <label for="agentPreset" class="form-label">
+                    <span class="label-icon">🤖</span>
+                    Select Agent Type
+                </label>
+                <select id="agentPreset" class="form-select">
+                    @foreach (var preset in Model.AgentPresets)
+                    {
+                        <option value="@preset.Id" 
+                                data-system-prompt="@preset.SystemPrompt" 
+                                data-user-prompt="@preset.UserPromptTemplate"
+                                selected="@(preset.Id == "detailed-minutes")">
+                            @preset.Name - @preset.Description
+                        </option>
+                    }
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label for="systemPromptInput" class="form-label">
+                    <span class="label-icon">⚙️</span>
+                    System Prompt
+                </label>
+                <textarea id="systemPromptInput" name="SystemPrompt" class="form-textarea" rows="3" placeholder="Define the agent's role and behavior...">@(Model.SystemPrompt ?? Models.AgentPresets.DetailedMinutes.SystemPrompt)</textarea>
+            </div>
+            
+            <div class="form-group">
+                <label for="userPromptInput" class="form-label">
+                    <span class="label-icon">💬</span>
+                    User Prompt Template
+                </label>
+                <textarea id="userPromptInput" name="UserPromptTemplate" class="form-textarea" rows="2" placeholder="Define how to structure the request...">@(Model.UserPromptTemplate ?? Models.AgentPresets.DetailedMinutes.UserPromptTemplate)</textarea>
+                <small class="form-hint">Use <code>{transcript}</code> as placeholder for the meeting transcript</small>
+            </div>
+            
+            <input type="hidden" id="transcriptPath" name="TranscriptPath" value="@(Model.Transcript?.TranscriptPath ?? "")" />
+            
+            <button type="button" id="generateSummary" class="primary-btn" data-initial-state="true">
+                ✨ Generate Summary
+            </button>
+        </div>
+    </div>
+    
+    <!-- Summary Card (hidden by default) -->
+    <div class="result-card" id="summaryCard" style="display: none;">
+        <div class="result-card__header">
+            <p class="eyebrow">Summary Generated</p>
+            <span class="badge badge--primary">Business summary</span>
+        </div>
+        <h2>Decisions & rationale</h2>
+        
+        <p class="processing-time" id="processingTime" style="display: none;">
+            ⏱️ Summarization completed in <span id="durationText"></span>
+        </p>
+        
+        <div class="summary-content" data-result="summary">
+            @if (Model.Result is not null)
+            {
+                @Html.Raw(Model.FormattedSummary)
+            }
+        </div>
+        
+        <button type="button" id="regenerateSummary" class="secondary-btn">
+            🔄 Regenerate with Different Agent
+        </button>
     </div>
 </section>
 
@@ -92,7 +140,7 @@
         <div class="progress-steps">
             <div class="progress-step" data-progress-step="upload">
                 <div class="progress-step__header">
-                    <span class="progress-step__title">Upload & sanitize video</span>
+                    <span class="progress-step__title">Stage 1: Upload & sanitize video</span>
                     <span class="progress-step__status">Pending</span>
                 </div>
                 <div class="progress-step__bar"><span></span></div>
@@ -100,7 +148,7 @@
             </div>
             <div class="progress-step" data-progress-step="transcribe">
                 <div class="progress-step__header">
-                    <span class="progress-step__title">Hungarian transcription</span>
+                    <span class="progress-step__title">Stage 2: Hungarian transcription</span>
                     <span class="progress-step__status">Pending</span>
                 </div>
                 <div class="progress-step__bar"><span></span></div>
@@ -108,13 +156,13 @@
             </div>
             <div class="progress-step" data-progress-step="summarize">
                 <div class="progress-step__header">
-                    <span class="progress-step__title">Decision summary</span>
+                    <span class="progress-step__title">Stage 3: Decision summary</span>
                     <span class="progress-step__status">Pending</span>
                 </div>
                 <div class="progress-step__spinner" aria-hidden="true">
                     <span></span>
                 </div>
-                <p>Feeding notes into the business decision writer.</p>
+                <p>Feeding notes into the AI agent.</p>
             </div>
         </div>
     </div>

@@ -46,13 +46,26 @@ public class IndexModel : PageModel
     [BindProperty]
     public string? OperationId { get; set; }
 
+    [BindProperty]
+    public string? TranscriptPath { get; set; }
+
+    [BindProperty]
+    public string? SystemPrompt { get; set; }
+
+    [BindProperty]
+    public string? UserPromptTemplate { get; set; }
+
     public VideoProcessingResult? Result { get; private set; }
+
+    public TranscriptData? Transcript { get; private set; }
 
     public string? ErrorMessage { get; private set; }
 
     public string? FormattedSummary => Result?.BusinessSummary is not null 
         ? Markdown.ToHtml(Result.BusinessSummary, new MarkdownPipelineBuilder().UseAdvancedExtensions().Build())
         : null;
+
+    public IReadOnlyList<AgentPreset> AgentPresets => Models.AgentPresets.All;
 
     private bool IsAjaxRequest =>
         string.Equals(Request?.Headers["X-Requested-With"], "XMLHttpRequest", StringComparison.OrdinalIgnoreCase);
@@ -87,18 +100,25 @@ public class IndexModel : PageModel
 
         try
         {
-            Result = await _videoProcessing.ProcessAsync(tempFile, OperationId, cancellationToken);
+            // Step 1 & 2: Transcribe and save transcript only
+            Transcript = await _videoProcessing.TranscribeOnlyAsync(tempFile, OperationId, cancellationToken);
+            TranscriptPath = Transcript.TranscriptPath;
+
+            // Mark transcription as complete - user will choose agent preset next
+            _progressTracker.UpdateStage(OperationId, ProgressStageKeys.Transcribe, ProgressStates.Completed, "Transcription complete. Ready to generate summary.");
+            
+            // Don't automatically run summarization - wait for user to select agent and click "Generate Summary"
         }
         catch (VideoProcessingException ex)
         {
             ErrorMessage = ex.Message;
-            _progressTracker.UpdateStage(OperationId, ProgressStageKeys.Summarize, ProgressStates.Failed, ex.Message);
+            _progressTracker.UpdateStage(OperationId, ProgressStageKeys.Transcribe, ProgressStates.Failed, ex.Message);
             _logger.LogWarning(ex, "Video processing failed with a known error.");
         }
         catch (Exception ex)
         {
             ErrorMessage = "We could not process the video. Check the server logs for details.";
-            _progressTracker.UpdateStage(OperationId, ProgressStageKeys.Summarize, ProgressStates.Failed, ErrorMessage);
+            _progressTracker.UpdateStage(OperationId, ProgressStageKeys.Transcribe, ProgressStates.Failed, ErrorMessage);
             _logger.LogError(ex, "Unexpected processing failure.");
         }
         finally
@@ -107,6 +127,75 @@ public class IndexModel : PageModel
         }
 
         return Respond();
+    }
+
+    public async Task<IActionResult> OnPostGenerateSummaryAsync(CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(TranscriptPath) || !System.IO.File.Exists(TranscriptPath))
+        {
+            ErrorMessage = "Transcript file not found. Please upload a video first.";
+            return Respond();
+        }
+
+        if (string.IsNullOrWhiteSpace(SystemPrompt) || string.IsNullOrWhiteSpace(UserPromptTemplate))
+        {
+            ErrorMessage = "Both system prompt and user prompt template are required.";
+            return Respond();
+        }
+
+        OperationId = string.IsNullOrWhiteSpace(OperationId)
+            ? Guid.NewGuid().ToString("N")
+            : OperationId;
+
+        _progressTracker.Start(OperationId);
+        _progressTracker.UpdateStage(OperationId, ProgressStageKeys.Summarize, ProgressStates.Running, "Generating summary with selected agent");
+
+        try
+        {
+            // Load the transcript data to get notes
+            var transcriptJson = await System.IO.File.ReadAllTextAsync(TranscriptPath, cancellationToken);
+            var transcriptData = System.Text.Json.JsonSerializer.Deserialize<TranscriptDataJson>(transcriptJson);
+            
+            Result = await _videoProcessing.SummarizeFromTranscriptAsync(
+                TranscriptPath,
+                SystemPrompt,
+                UserPromptTemplate,
+                OperationId,
+                cancellationToken
+            );
+
+            // Update result with the notes from transcript
+            if (transcriptData?.Notes != null)
+            {
+                Result = Result with { Notes = transcriptData.Notes };
+            }
+        }
+        catch (VideoProcessingException ex)
+        {
+            ErrorMessage = ex.Message;
+            _progressTracker.UpdateStage(OperationId, ProgressStageKeys.Summarize, ProgressStates.Failed, ex.Message);
+            _logger.LogWarning(ex, "Summary generation failed with a known error.");
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = "We could not generate the summary. Check the server logs for details.";
+            _progressTracker.UpdateStage(OperationId, ProgressStageKeys.Summarize, ProgressStates.Failed, ErrorMessage);
+            _logger.LogError(ex, "Unexpected generation failure.");
+        }
+
+        return Respond();
+    }
+
+    public IActionResult OnGetAgentPresets()
+    {
+        return new JsonResult(Models.AgentPresets.All.Select(p => new
+        {
+            p.Id,
+            p.Name,
+            p.Description,
+            p.SystemPrompt,
+            p.UserPromptTemplate
+        }));
     }
 
     private IActionResult Respond()
@@ -119,7 +208,9 @@ public class IndexModel : PageModel
                 success = errors.Count == 0 && ErrorMessage is null,
                 errors,
                 errorMessage = ErrorMessage,
-                result = Result
+                result = Result,
+                transcript = Transcript,
+                transcriptPath = Transcript?.TranscriptPath ?? TranscriptPath
             });
         }
 
@@ -147,4 +238,6 @@ public class IndexModel : PageModel
 
         return ModelState.IsValid;
     }
+
+    private record TranscriptDataJson(List<string>? Notes, string? TranscriptText);
 }

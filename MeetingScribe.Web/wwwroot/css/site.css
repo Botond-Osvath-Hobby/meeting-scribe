@@ -178,6 +178,103 @@ main {
   color: var(--accent);
 }
 
+/* Agent Selector Styles */
+.agent-selector {
+  padding: 1.5rem;
+  background: rgba(15, 17, 26, 0.6);
+  border: 1px solid var(--card-border);
+  border-radius: 1rem;
+  backdrop-filter: blur(10px);
+}
+
+.form-group {
+  margin-bottom: 1.5rem;
+}
+
+.form-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: var(--text);
+  letter-spacing: 0.01em;
+}
+
+.label-icon {
+  font-size: 1.1rem;
+  opacity: 0.9;
+}
+
+.form-select,
+.form-textarea {
+  width: 100%;
+  padding: 0.875rem 1rem;
+  background: rgba(5, 6, 10, 0.6);
+  border: 1px solid var(--card-border);
+  border-radius: 0.75rem;
+  color: var(--text);
+  font-size: 0.95rem;
+  font-family: inherit;
+  transition: border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
+  outline: none;
+}
+
+.form-select {
+  cursor: pointer;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16'%3E%3Cpath fill='%237b5cff' d='M4 6l4 4 4-4'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 1rem center;
+  padding-right: 3rem;
+}
+
+.form-select option {
+  background: var(--card);
+  color: var(--text);
+  padding: 0.5rem;
+}
+
+.form-textarea {
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 0.875rem;
+  line-height: 1.6;
+  resize: vertical;
+  min-height: 80px;
+}
+
+.form-select:hover,
+.form-textarea:hover {
+  border-color: rgba(123, 92, 255, 0.3);
+  background: rgba(5, 6, 10, 0.8);
+}
+
+.form-select:focus,
+.form-textarea:focus {
+  border-color: var(--accent);
+  background: rgba(5, 6, 10, 0.9);
+  box-shadow: 0 0 0 3px rgba(123, 92, 255, 0.1);
+}
+
+.form-hint {
+  display: block;
+  margin-top: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.form-hint code {
+  padding: 0.125rem 0.375rem;
+  background: rgba(123, 92, 255, 0.15);
+  border: 1px solid rgba(123, 92, 255, 0.25);
+  border-radius: 0.25rem;
+  color: var(--accent-strong);
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 0.875em;
+}
+
 .primary-btn {
   margin-top: 1.75rem;
   width: 100%;
@@ -195,6 +292,47 @@ main {
 .primary-btn:hover {
   transform: translateY(-2px);
   box-shadow: 0 20px 35px rgba(123, 92, 255, 0.4);
+}
+
+.primary-btn:active {
+  transform: translateY(0);
+}
+
+.primary-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.secondary-btn {
+  margin-top: 1.5rem;
+  width: 100%;
+  border: 2px solid var(--card-border);
+  border-radius: 1rem;
+  padding: 1rem 1.25rem;
+  font-size: 1.05rem;
+  font-weight: 600;
+  background: rgba(15, 17, 26, 0.8);
+  color: var(--text);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.secondary-btn:hover {
+  border-color: var(--accent);
+  background: rgba(123, 92, 255, 0.1);
+  transform: translateY(-2px);
+  box-shadow: 0 10px 25px rgba(123, 92, 255, 0.2);
+}
+
+.secondary-btn:active {
+  transform: translateY(0);
+}
+
+.secondary-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
 }
 
 .validation-summary {
@@ -485,6 +623,8 @@ main {
   border-top-color: var(--accent);
   margin-bottom: 0.65rem;
   display: none;
+  margin-left: auto;
+  margin-right: auto;
 }
 
 .progress-step.is-active .progress-step__spinner {

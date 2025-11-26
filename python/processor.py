@@ -33,7 +33,7 @@ LLAMA_KEYWORDS = ("llama", "mixtral", "mistral")
 
 # Prompts - concise for faster generation
 SUMMARY_SYSTEM_PROMPT = "Magyar business meeting összefoglaló szakértő vagy. Röviden, tömören foglald össze a döntéseket."
-SUMMARY_USER_PROMPT_TEMPLATE = "Összefoglaló döntésközpontúan:\n\n{chunk_text}"
+SUMMARY_USER_PROMPT_TEMPLATE = "Összefoglaló döntésközpontúan:\n\n{transcript}"
 
 # Generation defaults
 DEFAULT_MAX_NEW_TOKENS = 1024
@@ -73,6 +73,25 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=int(os.getenv("MAX_NEW_TOKENS", "1024")),
         help="Maximum tokens to generate per chunk. Model stops early if it finishes. (default: 1024)",
+    )
+    parser.add_argument(
+        "--system-prompt",
+        default=SUMMARY_SYSTEM_PROMPT,
+        help="Custom system prompt for the summarization model.",
+    )
+    parser.add_argument(
+        "--user-prompt-template",
+        default=SUMMARY_USER_PROMPT_TEMPLATE,
+        help="Custom user prompt template for the summarization model (use {transcript} placeholder).",
+    )
+    parser.add_argument(
+        "--transcript-only",
+        action="store_true",
+        help="Only transcribe, skip summarization. Saves transcript to a JSON file.",
+    )
+    parser.add_argument(
+        "--transcript-input",
+        help="Path to a previously saved transcript JSON file to use instead of transcribing.",
     )
     return parser.parse_args()
 
@@ -163,21 +182,17 @@ def load_transcript(video_path: Path, model_size: str, language: str):
         tqdm_module.tqdm = original_tqdm
 
 
-def summarize(transcript_text: str, model_name: str, max_summary_tokens: int, max_new_tokens: int) -> str:
+def summarize(transcript_text: str, model_name: str, max_summary_tokens: int, max_new_tokens: int, system_prompt: str, user_prompt_template: str) -> str:
     model_id = model_name.lower()
     if any(keyword in model_id for keyword in LLAMA_KEYWORDS):
-        return summarize_with_llama(transcript_text, model_name, max_summary_tokens, max_new_tokens)
+        return summarize_with_llama(transcript_text, model_name, max_summary_tokens, max_new_tokens, system_prompt, user_prompt_template)
 
     generator = get_text2text_pipeline(model_name)
     prompt = textwrap.dedent(
         f"""
-        Te egy magyar üzleti meeting jegyzőkönyv specialista vagy.
-        Az alábbi nyers, időrendi jegyzetekből készíts tömör, de részletes összefoglalót,
-        amely felsorolja a kulcs témákat, az összes felmerült üzleti opciót és a végső döntéseket.
-        Indokold a döntéseket a beszélgetés alapján, és emeld ki, ha valami follow-upot igényel.
+        {system_prompt}
 
-        Jegyzetek:
-        {transcript_text}
+        {user_prompt_template.format(transcript=transcript_text)}
         """
     ).strip()
     response = generator(prompt, max_length=512, min_length=120)
@@ -345,7 +360,7 @@ def _report_device_info(model) -> torch.device:
     return device
 
 
-def _prepare_generation_inputs(tokenizer, chunk_text: str, device: torch.device) -> tuple[torch.Tensor, torch.Tensor | None]:
+def _prepare_generation_inputs(tokenizer, chunk_text: str, device: torch.device, system_prompt: str, user_prompt_template: str) -> tuple[torch.Tensor, torch.Tensor | None]:
     """
     Prepare input tensors for model generation.
     
@@ -353,8 +368,8 @@ def _prepare_generation_inputs(tokenizer, chunk_text: str, device: torch.device)
         tuple of (input_ids, attention_mask)
     """
     messages = [
-        {"role": "system", "content": SUMMARY_SYSTEM_PROMPT},
-        {"role": "user", "content": SUMMARY_USER_PROMPT_TEMPLATE.format(chunk_text=chunk_text)},
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt_template.format(transcript=chunk_text)},
     ]
 
     if hasattr(tokenizer, "apply_chat_template"):
@@ -457,7 +472,7 @@ def _generate_chunk_summary(
     return summary
 
 
-def summarize_with_llama(transcript_text: str, model_name: str, max_summary_tokens: int, max_new_tokens: int) -> str:
+def summarize_with_llama(transcript_text: str, model_name: str, max_summary_tokens: int, max_new_tokens: int, system_prompt: str, user_prompt_template: str) -> str:
     """Summarize transcript text using a Llama-based model."""
     debug_log(f"Starting summarize_with_llama with {len(transcript_text)} chars")
     
@@ -483,7 +498,7 @@ def summarize_with_llama(transcript_text: str, model_name: str, max_summary_toke
         report_progress("summarize_chunk", "running", chunk=idx, total=total, tokens=len(chunk))
 
         # Prepare inputs
-        input_ids, attention_mask = _prepare_generation_inputs(tokenizer, chunk_text, device)
+        input_ids, attention_mask = _prepare_generation_inputs(tokenizer, chunk_text, device, system_prompt, user_prompt_template)
 
         # Generate summary
         summary = _generate_chunk_summary(
@@ -548,40 +563,78 @@ class GenerationProgressCallback(StoppingCriteria):
 def main() -> None:
     """Main entry point for the video processing pipeline."""
     args = parse_args()
-    video_path = Path(args.input)
-    if not video_path.exists():
-        raise FileNotFoundError(f"Video not found at {video_path}")
+    
+    # Check if we're loading a saved transcript
+    if args.transcript_input:
+        transcript_path = Path(args.transcript_input)
+        if not transcript_path.exists():
+            raise FileNotFoundError(f"Transcript not found at {transcript_path}")
+        
+        report_progress("transcribe", "running", message="Loading saved transcript")
+        with open(transcript_path, 'r', encoding='utf-8') as f:
+            transcript_data = json.load(f)
+        
+        notes = transcript_data.get("notes", [])
+        # Handle both snake_case and camelCase for backward compatibility
+        transcript_text = transcript_data.get("transcriptText", transcript_data.get("transcript_text", ""))
+        report_progress(
+            "transcribe",
+            "completed",
+            percent=1.0,
+            message=f"Loaded {len(notes)} notes from saved transcript",
+        )
+    else:
+        # Step 1: Transcribe audio
+        video_path = Path(args.input)
+        if not video_path.exists():
+            raise FileNotFoundError(f"Video not found at {video_path}")
 
-    # Step 1: Transcribe audio
-    report_progress("transcribe", "running", message="Starting Whisper")
-    transcript = load_transcript(video_path, args.model_size, args.language)
-    segments = transcript.get("segments") or []
-    notes = build_notes(segments)
-    report_progress(
-        "transcribe",
-        "completed",
-        percent=1.0,
-        message=f"{len(notes)} timestamped notes ready",
-    )
+        report_progress("transcribe", "running", message="Starting Whisper")
+        transcript = load_transcript(video_path, args.model_size, args.language)
+        segments = transcript.get("segments") or []
+        notes = build_notes(segments)
+        report_progress(
+            "transcribe",
+            "completed",
+            percent=1.0,
+            message=f"{len(notes)} timestamped notes ready",
+        )
 
-    # Debug: Output transcript to stderr
-    transcript_text = " ".join(segment.get("text", "").strip() for segment in segments).strip()
-    sys.stderr.write("[TRANSCRIPT_START]\n")
-    sys.stderr.write(transcript_text + "\n")
-    sys.stderr.write("[TRANSCRIPT_END]\n")
-    sys.stderr.flush()
+        # Build transcript text
+        transcript_text = " ".join(segment.get("text", "").strip() for segment in segments).strip()
+        
+        # Debug: Output transcript to stderr
+        sys.stderr.write("[TRANSCRIPT_START]\n")
+        sys.stderr.write(transcript_text + "\n")
+        sys.stderr.write("[TRANSCRIPT_END]\n")
+        sys.stderr.flush()
+        
+        # Save transcript if transcript-only mode
+        if args.transcript_only:
+            transcript_data = {
+                "notes": notes,
+                "transcriptText": transcript_text,
+            }
+            output_path = video_path.with_suffix('.transcript.json')
+            with open(output_path, 'w', encoding='utf-8') as f:
+                json.dump(transcript_data, f, ensure_ascii=False, indent=2)
+            
+            print(json.dumps(transcript_data, ensure_ascii=False), flush=True)
+            return
 
-    # Step 2: Summarize transcript
+    # Step 2: Summarize transcript (skip if transcript-only mode)
     report_progress("summarize", "running", message="Summarizing decisions")
     sys.stdout.flush()
     sys.stderr.flush()
     
     try:
         summary = summarize(
-            transcript_text or transcript.get("text", ""),
+            transcript_text,
             args.summary_model,
             args.max_summary_tokens,
             args.max_new_tokens,
+            args.system_prompt,
+            args.user_prompt_template,
         )
     except Exception as e:
         report_progress("summarize", "failed", message=f"Summarization error: {str(e)}")
