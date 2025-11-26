@@ -55,6 +55,9 @@ public class IndexModel : PageModel
     [BindProperty]
     public string? UserPromptTemplate { get; set; }
 
+    [BindProperty]
+    public string? CriticalInstruction { get; set; }
+
     public VideoProcessingResult? Result { get; private set; }
 
     public TranscriptData? Transcript { get; private set; }
@@ -137,9 +140,9 @@ public class IndexModel : PageModel
             return Respond();
         }
 
-        if (string.IsNullOrWhiteSpace(SystemPrompt) || string.IsNullOrWhiteSpace(UserPromptTemplate))
+        if (string.IsNullOrWhiteSpace(SystemPrompt) || string.IsNullOrWhiteSpace(UserPromptTemplate) || string.IsNullOrWhiteSpace(CriticalInstruction))
         {
-            ErrorMessage = "Both system prompt and user prompt template are required.";
+            ErrorMessage = "System prompt, user prompt template, and critical instruction are required.";
             return Respond();
         }
 
@@ -160,6 +163,7 @@ public class IndexModel : PageModel
                 TranscriptPath,
                 SystemPrompt,
                 UserPromptTemplate,
+                CriticalInstruction,
                 OperationId,
                 cancellationToken
             );

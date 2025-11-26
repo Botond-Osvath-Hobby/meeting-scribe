@@ -8,8 +8,8 @@ public class VideoProcessingOptions
     public string WhisperModelSize { get; set; } = "large-v3";
     public string FfmpegPath { get; set; } = "ffmpeg";
     public string SummaryModel { get; set; } = "C:/Users/osvth/.llama/checkpoints/Llama3.1-8B-Instruct-hf";
-    public int MaxSummaryTokens { get; set; } = 2000;
-    public int MaxNewTokens { get; set; } = 1024;
+    public int MaxSummaryTokens { get; set; } = 4000;
+    public int MaxNewTokens { get; set; } = 2048;
 }
 
 

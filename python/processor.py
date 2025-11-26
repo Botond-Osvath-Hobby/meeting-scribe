@@ -31,15 +31,39 @@ except ImportError as exc:  # pragma: no cover - import guard
 PROGRESS_PREFIX = "__PROGRESS__"
 LLAMA_KEYWORDS = ("llama", "mixtral", "mistral")
 
+# Critical instruction - ALWAYS appended to system prompts
+CRITICAL_INSTRUCTION = """═══════════════════════════════════════════════════════════════
+                          ⚠️ CRITICAL INSTRUCTION - READ THIS CAREFULLY ⚠️
+                          ═══════════════════════════════════════════════════════════════
+
+                          OUTPUT LANGUAGE: You MUST write your ENTIRE response in ENGLISH.
+                                          Do NOT write any Hungarian text in your output.
+                                          ENGLISH ONLY - no exceptions.
+
+                          INPUT LANGUAGE:  The transcript you receive is in Hungarian.
+                                          Your job: READ Hungarian → WRITE English
+
+                          PROCESS:
+                          Step 1: Read and understand the Hungarian transcript
+                          Step 2: Comprehend the meaning and context
+                          Step 3: Generate your response in ENGLISH
+
+                          UNKNOWN WORDS: If Hungarian words are unclear, use context clues 
+                                      to infer meaning intelligently.
+
+                          ═══════════════════════════════════════════════════════════════
+                          REMEMBER: Input = Hungarian (read only) | Output = ENGLISH (write)
+                          ═══════════════════════════════════════════════════════════════"""
+
 # Prompts - concise for faster generation
-SUMMARY_SYSTEM_PROMPT = "Magyar business meeting összefoglaló szakértő vagy. Röviden, tömören foglald össze a döntéseket."
-SUMMARY_USER_PROMPT_TEMPLATE = "Összefoglaló döntésközpontúan:\n\n{transcript}"
+SUMMARY_SYSTEM_PROMPT = "You are a business meeting summary expert. Create concise, decision-focused summaries."
+SUMMARY_USER_PROMPT_TEMPLATE = "Create a concise business summary focused on decisions:\n\n{transcript}"
 
 # Generation defaults
-DEFAULT_MAX_NEW_TOKENS = 1024
+DEFAULT_MAX_NEW_TOKENS = 2048
 DEFAULT_REPETITION_PENALTY = 1.1
 PROGRESS_REPORT_INTERVAL = 50
-DEFAULT_MIN_NEW_TOKENS = 100  # Allow early stopping but ensure minimum quality
+DEFAULT_MIN_NEW_TOKENS = 150  # Allow early stopping but ensure minimum quality
 
 
 def parse_args() -> argparse.Namespace:
@@ -65,14 +89,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--max-summary-tokens",
         type=int,
-        default=int(os.getenv("MAX_SUMMARY_TOKENS", "2000")),
+        default=int(os.getenv("MAX_SUMMARY_TOKENS", "4000")),
         help="Maximum input token window for the summary model (used for chunking the transcript).",
     )
     parser.add_argument(
         "--max-new-tokens",
         type=int,
-        default=int(os.getenv("MAX_NEW_TOKENS", "1024")),
-        help="Maximum tokens to generate per chunk. Model stops early if it finishes. (default: 1024)",
+        default=int(os.getenv("MAX_NEW_TOKENS", "2048")),
+        help="Maximum tokens to generate per chunk. Model stops early if it finishes. (default: 2048)",
     )
     parser.add_argument(
         "--system-prompt",
@@ -83,6 +107,11 @@ def parse_args() -> argparse.Namespace:
         "--user-prompt-template",
         default=SUMMARY_USER_PROMPT_TEMPLATE,
         help="Custom user prompt template for the summarization model (use {transcript} placeholder).",
+    )
+    parser.add_argument(
+        "--critical-instruction",
+        default=CRITICAL_INSTRUCTION.strip(),
+        help="Critical instruction always appended to system prompt (e.g., language requirements, context handling).",
     )
     parser.add_argument(
         "--transcript-only",
@@ -182,15 +211,18 @@ def load_transcript(video_path: Path, model_size: str, language: str):
         tqdm_module.tqdm = original_tqdm
 
 
-def summarize(transcript_text: str, model_name: str, max_summary_tokens: int, max_new_tokens: int, system_prompt: str, user_prompt_template: str) -> str:
+def summarize(transcript_text: str, model_name: str, max_summary_tokens: int, max_new_tokens: int, system_prompt: str, user_prompt_template: str, critical_instruction: str) -> str:
     model_id = model_name.lower()
     if any(keyword in model_id for keyword in LLAMA_KEYWORDS):
-        return summarize_with_llama(transcript_text, model_name, max_summary_tokens, max_new_tokens, system_prompt, user_prompt_template)
+        return summarize_with_llama(transcript_text, model_name, max_summary_tokens, max_new_tokens, system_prompt, user_prompt_template, critical_instruction)
 
+    # ALWAYS append critical instruction to system prompt
+    enhanced_system_prompt = system_prompt + "\n\n" + critical_instruction
+    
     generator = get_text2text_pipeline(model_name)
     prompt = textwrap.dedent(
         f"""
-        {system_prompt}
+        {enhanced_system_prompt}
 
         {user_prompt_template.format(transcript=transcript_text)}
         """
@@ -360,16 +392,26 @@ def _report_device_info(model) -> torch.device:
     return device
 
 
-def _prepare_generation_inputs(tokenizer, chunk_text: str, device: torch.device, system_prompt: str, user_prompt_template: str) -> tuple[torch.Tensor, torch.Tensor | None]:
+def _prepare_generation_inputs(tokenizer, chunk_text: str, device: torch.device, system_prompt: str, user_prompt_template: str, critical_instruction: str) -> tuple[torch.Tensor, torch.Tensor | None]:
     """
     Prepare input tensors for model generation.
     
     Returns:
         tuple of (input_ids, attention_mask)
     """
+    # ALWAYS append critical instruction to system prompt ONLY (not user message - that's bad practice)
+    enhanced_system_prompt = system_prompt + "\n\n" + critical_instruction
+    
+    # Format the user message with the transcript (clean, no instruction pollution)
+    user_message = user_prompt_template.format(transcript=chunk_text)
+    
+    debug_log(f"System prompt: {system_prompt[:100]}...")
+    debug_log(f"Critical instruction: {critical_instruction[:150]}...")
+    debug_log(f"Enhanced system prompt: {enhanced_system_prompt[:200]}...")
+    
     messages = [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": user_prompt_template.format(transcript=chunk_text)},
+        {"role": "system", "content": enhanced_system_prompt},
+        {"role": "user", "content": user_message},
     ]
 
     if hasattr(tokenizer, "apply_chat_template"):
@@ -472,9 +514,10 @@ def _generate_chunk_summary(
     return summary
 
 
-def summarize_with_llama(transcript_text: str, model_name: str, max_summary_tokens: int, max_new_tokens: int, system_prompt: str, user_prompt_template: str) -> str:
+def summarize_with_llama(transcript_text: str, model_name: str, max_summary_tokens: int, max_new_tokens: int, system_prompt: str, user_prompt_template: str, critical_instruction: str) -> str:
     """Summarize transcript text using a Llama-based model."""
     debug_log(f"Starting summarize_with_llama with {len(transcript_text)} chars")
+    debug_log(f"Received critical_instruction: {critical_instruction[:100]}...")
     
     # Load model and tokenizer
     tokenizer, model = load_llama_artifacts(model_name)
@@ -498,7 +541,7 @@ def summarize_with_llama(transcript_text: str, model_name: str, max_summary_toke
         report_progress("summarize_chunk", "running", chunk=idx, total=total, tokens=len(chunk))
 
         # Prepare inputs
-        input_ids, attention_mask = _prepare_generation_inputs(tokenizer, chunk_text, device, system_prompt, user_prompt_template)
+        input_ids, attention_mask = _prepare_generation_inputs(tokenizer, chunk_text, device, system_prompt, user_prompt_template, critical_instruction)
 
         # Generate summary
         summary = _generate_chunk_summary(
@@ -635,6 +678,7 @@ def main() -> None:
             args.max_new_tokens,
             args.system_prompt,
             args.user_prompt_template,
+            args.critical_instruction,
         )
     except Exception as e:
         report_progress("summarize", "failed", message=f"Summarization error: {str(e)}")

@@ -576,12 +576,19 @@ const initAgentSelector = () => {
     const selectedOption = agentPresetSelect.options[agentPresetSelect.selectedIndex];
     const systemPrompt = selectedOption.dataset.systemPrompt;
     const userPrompt = selectedOption.dataset.userPrompt;
+    const criticalInstruction = selectedOption.dataset.criticalInstruction;
 
     if (systemPrompt) {
       systemPromptInput.value = systemPrompt;
     }
     if (userPrompt) {
       userPromptInput.value = userPrompt;
+    }
+    if (criticalInstruction) {
+      const criticalInstructionInput = document.getElementById("criticalInstructionInput");
+      if (criticalInstructionInput) {
+        criticalInstructionInput.value = criticalInstruction;
+      }
     }
   });
 
@@ -602,9 +609,11 @@ const initAgentSelector = () => {
         agentSelector.scrollIntoView({ behavior: "smooth", block: "center" });
       }
       
-      // Focus on the preset dropdown
+      // Focus on the preset dropdown WITHOUT causing additional scroll
       if (agentPresetSelect) {
-        setTimeout(() => agentPresetSelect.focus(), 300);
+        setTimeout(() => {
+          agentPresetSelect.focus({ preventScroll: true });
+        }, 300);
       }
       
       // Optionally trigger generation automatically or let user modify first
@@ -617,14 +626,16 @@ const initAgentSelector = () => {
     const transcriptPath = transcriptPathInput?.value;
     const systemPrompt = systemPromptInput.value.trim();
     const userPromptTemplate = userPromptInput.value.trim();
+    const criticalInstructionInput = document.getElementById("criticalInstructionInput");
+    const criticalInstruction = criticalInstructionInput?.value.trim() || "";
 
     if (!transcriptPath) {
       alert("Transcript not found. Please upload a video first.");
       return;
     }
 
-    if (!systemPrompt || !userPromptTemplate) {
-      alert("Both system prompt and user prompt template are required.");
+    if (!systemPrompt || !userPromptTemplate || !criticalInstruction) {
+      alert("System prompt, user prompt template, and critical instruction are required.");
       return;
     }
 
@@ -827,6 +838,7 @@ const initAgentSelector = () => {
       formData.append("TranscriptPath", transcriptPath);
       formData.append("SystemPrompt", systemPrompt);
       formData.append("UserPromptTemplate", userPromptTemplate);
+      formData.append("CriticalInstruction", criticalInstruction);
       formData.append("OperationId", operationId);
 
       const response = await fetch("?handler=GenerateSummary", {

@@ -110,6 +110,7 @@ public class VideoProcessingService
         string transcriptPath,
         string systemPrompt,
         string userPromptTemplate,
+        string criticalInstruction,
         string? operationId,
         CancellationToken cancellationToken = default)
     {
@@ -150,6 +151,9 @@ public class VideoProcessingService
         // Add custom prompts (escape quotes in prompts)
         arguments += $" --system-prompt \"{systemPrompt.Replace("\"", "\\\"")}\"";
         arguments += $" --user-prompt-template \"{userPromptTemplate.Replace("\"", "\\\"")}\"";
+        arguments += $" --critical-instruction \"{criticalInstruction.Replace("\"", "\\\"")}\"";
+        
+        _logger.LogInformation("Passing critical instruction to Python: {CriticalInstruction}", criticalInstruction.Substring(0, Math.Min(100, criticalInstruction.Length)));
 
         var resultJson = await RunPythonScriptAsync(pythonPath, arguments, operationId, cancellationToken);
 
