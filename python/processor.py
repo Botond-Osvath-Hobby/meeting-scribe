@@ -15,6 +15,7 @@ try:
     from transformers import (
         AutoModelForCausalLM,
         AutoTokenizer,
+        BitsAndBytesConfig,
         pipeline,
         StoppingCriteria,
         StoppingCriteriaList,
@@ -30,14 +31,15 @@ except ImportError as exc:  # pragma: no cover - import guard
 PROGRESS_PREFIX = "__PROGRESS__"
 LLAMA_KEYWORDS = ("llama", "mixtral", "mistral")
 
-# Prompts
-SUMMARY_SYSTEM_PROMPT = "You are an expert Hungarian business meeting summarizer. Capture decisions, rationales, options, and follow-ups."
-SUMMARY_USER_PROMPT_TEMPLATE = "Foglalod össze az alábbi meeting szegmenst magyarul, döntésközponton.\n\n{chunk_text}"
+# Prompts - concise for faster generation
+SUMMARY_SYSTEM_PROMPT = "Magyar business meeting összefoglaló szakértő vagy. Röviden, tömören foglald össze a döntéseket."
+SUMMARY_USER_PROMPT_TEMPLATE = "Összefoglaló döntésközpontúan:\n\n{chunk_text}"
 
 # Generation defaults
-DEFAULT_MAX_NEW_TOKENS = 2048
+DEFAULT_MAX_NEW_TOKENS = 1024
 DEFAULT_REPETITION_PENALTY = 1.1
 PROGRESS_REPORT_INTERVAL = 50
+DEFAULT_MIN_NEW_TOKENS = 100  # Allow early stopping but ensure minimum quality
 
 
 def parse_args() -> argparse.Namespace:
@@ -69,8 +71,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--max-new-tokens",
         type=int,
-        default=int(os.getenv("MAX_NEW_TOKENS", "2048")),
-        help="Maximum tokens to generate per chunk. Model stops early if it finishes. (default: 2048)",
+        default=int(os.getenv("MAX_NEW_TOKENS", "1024")),
+        help="Maximum tokens to generate per chunk. Model stops early if it finishes. (default: 1024)",
     )
     return parser.parse_args()
 
@@ -233,20 +235,38 @@ def load_llama_artifacts(model_name: str):
     # Determine device configuration
     device_map, force_gpu, cuda_available = _determine_device_map()
 
-    # Load model
-    debug_log(f"Loading model with device_map={device_map}, torch_dtype=float16")
-    model = AutoModelForCausalLM.from_pretrained(
-        model_name,
-        torch_dtype=torch.float16,
-        device_map=device_map,
-        low_cpu_mem_usage=True,
-    )
+    # Load model with 8-bit quantization for faster inference
+    debug_log(f"Loading model with device_map={device_map}, attempting 8-bit quantization")
+    use_8bit = False
+    try:
+        if device_map == "cuda":
+            quantization_config = BitsAndBytesConfig(load_in_8bit=True)
+            model = AutoModelForCausalLM.from_pretrained(
+                model_name,
+                quantization_config=quantization_config,
+                device_map=device_map,
+                low_cpu_mem_usage=True,
+            )
+            use_8bit = True
+            debug_log("Model loaded with 8-bit quantization (faster inference)")
+        else:
+            raise ValueError("8-bit only supported on CUDA")
+    except Exception as e:
+        debug_log(f"8-bit loading failed, falling back to float16: {e}")
+        model = AutoModelForCausalLM.from_pretrained(
+            model_name,
+            torch_dtype=torch.float16,
+            device_map=device_map,
+            low_cpu_mem_usage=True,
+        )
 
-    # Explicitly move to GPU if forced
-    if force_gpu and cuda_available:
+    # Explicitly move to GPU only if NOT using 8-bit (8-bit models are already on correct device)
+    if force_gpu and cuda_available and not use_8bit:
         debug_log("Explicitly moving model to cuda:0")
         model = model.to("cuda:0")
         report_progress("summarize_model", "info", message="Model loaded on GPU (cuda:0)")
+    elif use_8bit:
+        report_progress("summarize_model", "info", message="Model loaded with 8-bit quantization on GPU (faster)")
     elif not cuda_available:
         report_progress("summarize_model", "warning", message="CUDA not available - using CPU (will be slow!)")
 
@@ -383,15 +403,18 @@ def _generate_chunk_summary(
     )
     stopping_criteria = StoppingCriteriaList([progress_callback])
     
-    # Prepare generation kwargs
+    # Prepare generation kwargs - optimized for speed
     gen_kwargs = dict(
         input_ids=input_ids,
         max_new_tokens=max_new_tokens,
+        min_new_tokens=DEFAULT_MIN_NEW_TOKENS,
         do_sample=False,
         eos_token_id=tokenizer.eos_token_id,
         pad_token_id=tokenizer.pad_token_id,
         repetition_penalty=DEFAULT_REPETITION_PENALTY,
         stopping_criteria=stopping_criteria,
+        use_cache=True,  # Enable KV cache for faster generation
+        num_beams=1,  # Greedy decoding (fastest)
     )
     if attention_mask is not None:
         gen_kwargs["attention_mask"] = attention_mask
@@ -467,7 +490,7 @@ def summarize_with_llama(transcript_text: str, model_name: str, max_summary_toke
             model, tokenizer, input_ids, attention_mask, device, idx, total, max_new_tokens
         )
         
-        summaries.append(f"Chunk {idx}/{total} összefoglaló:\n{summary}")
+        summaries.append(summary)
         report_progress(
             "summarize_chunk",
             "completed",
@@ -477,7 +500,10 @@ def summarize_with_llama(transcript_text: str, model_name: str, max_summary_toke
             message=f"Chunk {idx}/{total} summary ready ({len(summary)} chars)",
         )
 
-    return "\n\n".join(summaries) if summaries else ""
+    # Join summaries with clear separator if multiple chunks
+    if len(summaries) > 1:
+        return "\n\n---\n\n".join(summaries)
+    return summaries[0] if summaries else ""
 
 
 

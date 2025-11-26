@@ -40,7 +40,27 @@
             <span class="badge badge--primary">Business summary</span>
         </div>
         <h2>Decisions & rationale</h2>
-        <p data-result="summary">@Model.Result?.BusinessSummary</p>
+        @if (Model.Result is not null)
+        {
+            <p class="processing-time">
+                ⏱️ Processing completed in 
+                @if (Model.Result.ProcessingDuration.TotalHours >= 1)
+                {
+                    @($"{Model.Result.ProcessingDuration.Hours}h {Model.Result.ProcessingDuration.Minutes}m {Model.Result.ProcessingDuration.Seconds}s")
+                }
+                else if (Model.Result.ProcessingDuration.TotalMinutes >= 1)
+                {
+                    @($"{Model.Result.ProcessingDuration.Minutes}m {Model.Result.ProcessingDuration.Seconds}s")
+                }
+                else
+                {
+                    @($"{Model.Result.ProcessingDuration.Seconds}s")
+                }
+            </p>
+        }
+        <div class="summary-content" data-result="summary">
+            @Html.Raw(Model.FormattedSummary)
+        </div>
     </div>
 
     <div class="result-card">

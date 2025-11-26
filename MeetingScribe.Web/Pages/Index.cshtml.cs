@@ -1,5 +1,6 @@
 using System.IO;
 using System.Linq;
+using Markdig;
 using MeetingScribe.Web.Models;
 using MeetingScribe.Web.Services;
 using Microsoft.AspNetCore.Mvc;
@@ -48,6 +49,10 @@ public class IndexModel : PageModel
     public VideoProcessingResult? Result { get; private set; }
 
     public string? ErrorMessage { get; private set; }
+
+    public string? FormattedSummary => Result?.BusinessSummary is not null 
+        ? Markdown.ToHtml(Result.BusinessSummary, new MarkdownPipelineBuilder().UseAdvancedExtensions().Build())
+        : null;
 
     private bool IsAjaxRequest =>
         string.Equals(Request?.Headers["X-Requested-With"], "XMLHttpRequest", StringComparison.OrdinalIgnoreCase);

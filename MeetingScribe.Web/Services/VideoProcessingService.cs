@@ -40,6 +40,8 @@ public class VideoProcessingService
         string? operationId,
         CancellationToken cancellationToken = default)
     {
+        var startTime = DateTime.UtcNow;
+        
         if (!File.Exists(videoPath))
         {
             throw new VideoProcessingException("The uploaded video could not be found on the server.");
@@ -210,7 +212,8 @@ public class VideoProcessingService
                 var notes = result.Notes?.Where(n => !string.IsNullOrWhiteSpace(n)).ToList()
                             ?? new List<string>();
 
-                finalResult = new VideoProcessingResult(notes, result.BusinessSummary.Trim());
+                var duration = DateTime.UtcNow - startTime;
+                finalResult = new VideoProcessingResult(notes, result.BusinessSummary.Trim(), duration);
             }
             catch (VideoProcessingException)
             {
@@ -223,6 +226,8 @@ public class VideoProcessingService
                 throw new VideoProcessingException("Could not parse the AI response. Ensure the script prints JSON.", ex);
             }
 
+            var totalDuration = DateTime.UtcNow - startTime;
+            _logger.LogInformation("Video processing completed in {Duration}", totalDuration);
             _progressTracker.UpdateStage(operationId ?? string.Empty, ProgressStageKeys.Summarize, ProgressStates.Completed, "Summary ready.");
             return finalResult;
         }
